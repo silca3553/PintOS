@@ -15,6 +15,7 @@
 #include "userprog/process.h"
 #endif
 
+/*수정 필요한 부분*/
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
    of thread.h for details. */

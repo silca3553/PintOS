@@ -6,7 +6,6 @@
 #include "threads/malloc.h"
 
 
-/*차은성 바보*/
 /* A block device. */
 struct block
   {
