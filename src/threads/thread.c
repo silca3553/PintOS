@@ -596,28 +596,47 @@ allocate_tid (void)
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
+
 /*alarm clock*/
+//오름차순 정렬
+bool cmp_alarm(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+  struct thread *a_ = list_entry(a, struct thread, elem);
+  struct thread *b_ = list_entry(b, struct thread, elem);
+  return (a_->alarm < b_->alarm);
+}
 
 void thread_alarm(int64_t alarm){
   enum intr_level old_level;
+
+  struct thread *t;
+
   old_level = intr_disable ();
-  struct thread *t = thread_current();
+  t = thread_current();
+
   t->alarm = alarm;
-  list_less_func less;
-  list_insert_ordered (&sleep_list, &t->elem, !less, &t->alarm);
+  list_insert_ordered (&sleep_list, &t->elem, cmp_alarm, &t->alarm);
+
   thread_block();
+
+  intr_set_level(old_level);
 }
 
 void thread_wakeup(int64_t ticks){
   
-  struct list_elem *e = list_front(&sleep_list);
-  struct thread* t = list_entry(e, struct thread, elem);
-  list_less_func less;
+  struct list_elem *e = list_begin(&sleep_list);
 
-  while (t->alarm <= ticks){
-    e = list_remove(e);
-    thread_unblock(t);
-    t = list_entry(e, struct thread, elem);
-  }
+  while (e != list_end (&sleep_list)) { 
+    struct thread *t = list_entry(e, struct thread, elem);
+    ASSERT(t != NULL);
+    if (t->alarm <= ticks) {
+        e = list_remove(e);
+        thread_unblock(t);
+    } else {
+        break;
+    
+    }
+}
+
 }
 
