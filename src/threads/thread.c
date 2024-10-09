@@ -15,7 +15,6 @@
 #include "userprog/process.h"
 #endif
 
-/*수정 필요한 부분*/
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
    of thread.h for details. */
@@ -28,6 +27,9 @@ static struct list ready_list;
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
+
+/* Alarm Clock. List of sleep thread */
+static struct list sleep_list;
 
 /* Idle thread. */
 static struct thread *idle_thread;
@@ -93,6 +95,8 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
+  /*alarm clock*/
+  list_init(&sleep_list);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -238,8 +242,10 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  list_push_back (&ready_list, &t->elem); //list_insert_orderd로 바꾸기?
   t->status = THREAD_READY;
+  //t->priority ? current_thread()->priority 확인 후
+  //t가 더 높다면 thread_yield() 호출.
   intr_set_level (old_level);
 }
 
@@ -309,7 +315,7 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+    list_push_back (&ready_list, &cur->elem); //list_insert_ordered()
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -337,6 +343,9 @@ void
 thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
+  //ready_list pop_front 해서 그 thread의 priority와 비교하고 
+  //기존 게 더 높으면 pop한 거 다시 ready list에 넣고 
+  //ready가 더 높으면 yield 호출.
 }
 
 /* Returns the current thread's priority. */
@@ -463,6 +472,8 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  /*alarm clock*/
+  t->alarm = NULL;
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
@@ -494,6 +505,7 @@ next_thread_to_run (void)
   if (list_empty (&ready_list))
     return idle_thread;
   else
+    //if(!is_sorted() ? list_sort() | {})
     return list_entry (list_pop_front (&ready_list), struct thread, elem);
 }
 
@@ -583,3 +595,29 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+/*alarm clock*/
+
+void thread_alarm(int64_t alarm){
+  enum intr_level old_level;
+  old_level = intr_disable ();
+  struct thread *t = thread_current();
+  t->alarm = alarm;
+  list_less_func less;
+  list_insert_ordered (&sleep_list, &t->elem, !less, &t->alarm);
+  thread_block();
+}
+
+void thread_wakeup(int64_t ticks){
+  
+  struct list_elem *e = list_front(&sleep_list);
+  struct thread* t = list_entry(e, struct thread, elem);
+  list_less_func less;
+
+  while (t->alarm <= ticks){
+    e = list_remove(e);
+    thread_unblock(t);
+    t = list_entry(e, struct thread, elem);
+  }
+}
+

@@ -68,6 +68,9 @@ sema_down (struct semaphore *sema)
   old_level = intr_disable ();
   while (sema->value == 0) 
     {
+      //semaphore->holder 확인해서, 그 holder가 current보다 낮은 priority라면
+      //그 thread->priority를 thread_prev_priority에 저장. thread = current_thread->priority;
+      //만약 
       list_push_back (&sema->waiters, &thread_current ()->elem);
       thread_block ();
     }
