@@ -237,9 +237,27 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+
+  //list_push_back() 대신 넣음
+  list_insert_ordered(&ready_list, &t->elem, thread_compare_priority, NULL);
   t->status = THREAD_READY;
+
+  //새로 ready 된 thread가 running thread 보다 priority가 높다면 바로 switching
+  if(t->priority > thread_get_priority())
+    thread_light_yield();
+
   intr_set_level (old_level);
+}
+
+void
+thread_light_yield()
+{
+  struct thread *cur = thread_current ();
+
+  if (cur != idle_thread) 
+    list_insert_ordered(&ready_list, &cur->elem, thread_compare_priority, NULL);
+  cur->status = THREAD_READY;
+  schedule ();
 }
 
 /* Returns the name of the running thread. */
@@ -308,7 +326,7 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+    list_insert_ordered(&ready_list, &cur->elem, thread_compare_priority, NULL);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -335,7 +353,13 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+  enum intr_level old_level;
+  old_level = intr_disable ();
+  struct thread* cur = thread_current();
+  cur->priority = new_priority;
+  if(thread_compare_priority(list_begin(&ready_list),&cur->elem,NULL))
+    thread_light_yield();
+  intr_set_level (old_level);
 }
 
 /* Returns the current thread's priority. */
@@ -343,6 +367,15 @@ int
 thread_get_priority (void) 
 {
   return thread_current ()->priority;
+}
+
+/* return true if the priority of thread holding elem_a is bigger than elem_b's*/
+bool
+thread_compare_priority (const struct list_elem* elem_a, const struct list_elem* elem_b, void * aux UNUSED)
+{
+  int a_pri = list_entry (elem_a, struct thread, elem)->priority;
+  int b_pri = list_entry (elem_b, struct thread, elem)->priority;
+  return a_pri > b_pri;
 }
 
 /* Sets the current thread's nice value to NICE. */
