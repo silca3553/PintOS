@@ -89,7 +89,13 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
     struct list_elem allelem;           /* List element for all threads list. */
-    int init_pri;                       /* priority가 바뀔 것을 대비해 초기 priority 저장*/
+    
+    
+    /*alam clock*/
+    int64_t alarm;
+    
+    /*priority scheduling*/  
+    int init_priority;                       /* priority가 바뀔 것을 대비해 초기 priority 저장*/
     struct thread* donate_thread;       /* 해당 thread의 priority를 donation 받은 thread pointer*/ 
 
     /* Shared between thread.c and synch.c. */
@@ -99,7 +105,7 @@ struct thread
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
 #endif
-
+    
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
@@ -120,6 +126,7 @@ tid_t thread_create (const char *name, int priority, thread_func *, void *);
 
 void thread_block (void);
 void thread_unblock (struct thread *);
+void thread_intr_unblock (struct thread *);
 
 struct thread *thread_current (void);
 tid_t thread_tid (void);
@@ -135,11 +142,20 @@ void thread_foreach (thread_action_func *, void *);
 
 int thread_get_priority (void);
 void thread_set_priority (int);
-bool thread_compare_priority (const struct list_elem* elem_a, const struct list_elem* elem_b, void * aux UNUSED);
+
 
 int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+/*compare function*/
+bool cmp_alarm(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+bool cmp_priority (const struct list_elem* elem_a, const struct list_elem* elem_b, void * aux UNUSED);
+
+/*alarm clock*/
+void thread_alarm(int64_t alarm);
+void thread_wakeup(int64_t ticks);
+
 
 #endif /* threads/thread.h */
