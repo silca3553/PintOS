@@ -197,19 +197,44 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
-  // struct thread *t = thread_current();
-  // struct thread *holder = lock->holder;
-  // if(holder != NULL)
-  // {
-  //   if(holder->priority < t->priority)
-  //   {
-  //     holder->priority = t->priority;
-  //     t->donate_thread = holder;
+  /*priority scheduling (donation)*/
+  enum intr_level old_level = intr_disable ();
+  
+  struct thread *t = thread_current();
+  struct thread *holder = lock->holder;
+  
+  donate_priority(t, holder);
 
-  //   }
-  // }
+  /*기존 코드*/
   sema_down (&lock->semaphore);
   lock->holder = thread_current ();
+
+  /*priority scheduling*/
+  //새롭게 holder가 된 녀석에게 모든 waiters list가 donate_to를 holder로
+  struct list_elem *e = list_begin(&lock->semaphore.waiters);
+  
+  while(e != list_end(&lock->semaphore.waiters)){
+    struct thread *t_ = list_entry(e, struct thread, elem);
+    t_->donate_to = lock->holder;
+    e = list_next(e);
+  }
+  intr_set_level(old_level);
+}
+//재귀적으로 고칠것
+  //donate 발생 시, donate 받은 애가 위치한 list를 재정렬할 필요 있음
+void
+donate_priority(struct thread *a, struct thread *b) //a가 b에게 priority donate해야하는지 확인하고 donate한다.
+{
+  if(b != NULL && b->priority < a->priority)
+  { 
+    b->priority = a->priority;
+    move_to_front(&b->elem);
+    a->donate_to = b;
+    struct thread *a_ = b;
+    struct thread *b_ = b->donate_to;
+    donate_priority(a_, b_);
+    //thread_yield();
+  }
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -242,9 +267,19 @@ lock_release (struct lock *lock)
 {
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
-
+  struct thread *t = lock->holder;
   lock->holder = NULL;
+
+  enum intr_level old_level = intr_disable();
+  /*priority scheduling*/
+  if(t->init_priority != t->priority)
+  {
+    t->priority = t->init_priority;
+  }
+
   sema_up (&lock->semaphore);
+  
+  intr_set_level(old_level);
 }
 
 /* Returns true if the current thread holds LOCK, false

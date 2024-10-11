@@ -95,8 +95,8 @@ struct thread
     int64_t alarm;
     
     /*priority scheduling*/  
-    int init_priority;                       /* priority가 바뀔 것을 대비해 초기 priority 저장*/
-    struct thread* donate_thread;       /* 해당 thread의 priority를 donation 받은 thread pointer*/ 
+    int init_priority;                  /* priority가 바뀔 것을 대비해 초기 priority 저장*/
+    struct thread* donate_to;           /* 해당 thread의 priority를 donate 해야하는 thread pointer*/ 
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */

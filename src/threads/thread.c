@@ -525,7 +525,7 @@ init_thread (struct thread *t, const char *name, int priority)
 
   /*priority scheduling*/
   t->init_priority = priority;
-  t->donate_thread = NULL;
+  t->donate_to = NULL;
 
   t->magic = THREAD_MAGIC;
 
@@ -695,7 +695,7 @@ void thread_wakeup(int64_t ticks){
   while( e != list_end (&sleep_list))
   {
     t= list_entry(e, struct thread, elem);
-    if ( t -> alarm <= ticks)
+    if (t -> alarm <= ticks)
     {
       e = list_remove(e);
       thread_intr_unblock(t);

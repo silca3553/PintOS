@@ -522,3 +522,24 @@ list_min (struct list *list, list_less_func *less, void *aux)
     }
   return min;
 }
+
+
+/* list_elem a를 본인이 속한 list의 맨 앞으로 이동시키는 함수 */
+void move_to_front(struct list_elem *a) {
+    if (is_head(a->prev))
+      return;
+    
+    struct list_elem *begin = a;
+
+    while (!is_head(begin->prev))
+      begin = begin->prev;
+
+    a->prev->next = a->next;
+    a->next->prev = a->prev;
+
+    a->prev = begin->prev;
+    a->next = begin;
+
+    begin->prev->next = a;
+    begin->prev = a;
+}
