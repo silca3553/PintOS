@@ -23,6 +23,7 @@
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
+static struct list muti_ready_list[64];
 
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
@@ -62,7 +63,7 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
 
-//int load_avg;
+int load_avg;
 
 static void kernel_thread (thread_func *, void *aux);
 
@@ -100,6 +101,10 @@ thread_init (void)
   /*alarm clock*/
   list_init(&sleep_list);
 
+  /*advanced scheduler*/
+  for(int i=0; i< 64; i++)
+    list_init(&muti_ready_list[i]);
+
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);
@@ -118,7 +123,7 @@ thread_start (void)
   thread_create ("idle", PRI_MIN, idle, &idle_started);
 
   /*advanced scheduling*/
-  //load_avg = 0;
+  load_avg = 0;
 
   /* Start preemptive thread scheduling. */
   intr_enable ();
@@ -255,29 +260,12 @@ thread_unblock (struct thread *t)
 
   //새로 ready 된 thread가 running thread 보다 priority가 높다면 바로 switching
   if(t->priority > thread_get_priority())
-    thread_light_yield();
-
-  intr_set_level (old_level);
-}
-
-/*alarm용 yield_on unblock*/
-void
-thread_intr_unblock (struct thread *t) 
-{
-  enum intr_level old_level;
-
-  ASSERT (is_thread (t));
-
-  old_level = intr_disable ();
-  ASSERT (t->status == THREAD_BLOCKED);
-  
-  //list_push_back() 대신 넣음
-  list_insert_ordered(&ready_list, &t->elem, cmp_priority, NULL);
-  t->status = THREAD_READY;
-
-    //새로 ready 된 thread가 running thread 보다 priority가 높다면 바로 switching
-  if(t->priority > thread_get_priority())
-    intr_yield_on_return();
+  {
+    if(intr_context())
+      intr_yield_on_return();
+    else
+      thread_yield();
+  }
 
   intr_set_level (old_level);
 }
@@ -355,17 +343,6 @@ thread_yield (void)
   intr_set_level (old_level);
 }
 
-/*Priority Scheduling*/
-void
-thread_light_yield()
-{
-  struct thread *cur = thread_current ();
-
-  if (cur != idle_thread) 
-    list_insert_ordered(&ready_list, &cur->elem, cmp_priority, NULL);
-  cur->status = THREAD_READY;
-  schedule ();
-}
 
 /* Invoke function 'func' on all threads, passing along 'aux'.
    This function must be called with interrupts off. */
@@ -389,8 +366,8 @@ void
 thread_set_priority (int new_priority) 
 {
   /*Advanced Scheduler*/
-  //if(thread_mlfqs)
-  //  return;
+  if(thread_mlfqs)
+   return;
 
   enum intr_level old_level;
   old_level = intr_disable ();
@@ -402,7 +379,7 @@ thread_set_priority (int new_priority)
 
   /*Priority Scheduling*/
   if(cmp_priority(list_begin(&ready_list),&cur->elem,NULL))
-    thread_light_yield();
+    thread_yield();
   intr_set_level (old_level);
 }
 
@@ -418,31 +395,41 @@ thread_get_priority (void)
 void
 thread_set_nice (int nice UNUSED) 
 {
-  /* Not yet implemented. */
+  enum intr_level old_level = intr_disable();
+  struct thread* cur = thread_current(); 
+  cur->nice = nice;
+  calc_priority(cur);
+  if(cmp_priority(list_begin(&ready_list),&cur->elem,NULL))
+    thread_yield();
+  intr_set_level(old_level);
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return thread_current()->nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  enum intr_level old_level = intr_disable ();
+  int int_load_avg = fp_to_round_int(fp_int_multiply(load_avg, 100));
+  intr_set_level(old_level);
+  return int_load_avg;
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  enum intr_level old_level = intr_disable ();
+  int fp_recent = thread_current()->recent_cpu;
+  int int_recent = fp_to_round_int(fp_int_multiply(fp_recent,100));
+  intr_set_level (old_level);
+  return int_recent;
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -540,8 +527,14 @@ init_thread (struct thread *t, const char *name, int priority)
   t->init_priority = priority;
 
   /*advanced scheduling*/
-  //t->nice = 0;
-  //t->recent_cpu = 0;
+  if(thread_mlfqs)
+  {
+    t->nice = 0;
+    if(list_empty(&all_list))
+      t->recent_cpu = 0;
+    else
+      t->recent_cpu = thread_current()->recent_cpu;
+  }
 
   t->magic = THREAD_MAGIC;
 
@@ -669,7 +662,7 @@ uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 /* return true if the priority of thread holding elem_a is bigger than elem_b's*/
 //내림차순 정렬
 bool
-cmp_priority (const struct list_elem* elem_a, const struct list_elem* elem_b, void * aux UNUSED)
+cmp_priority (const struct list_elem* elem_a, const struct list_elem* elem_b, void *aux UNUSED)
 {
   int a_pri = list_entry (elem_a, struct thread, elem)->priority;
   int b_pri = list_entry (elem_b, struct thread, elem)->priority;
@@ -684,7 +677,6 @@ cmp_alarm(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED
   struct thread *b_ = list_entry(b, struct thread, elem);
   return (a_->alarm < b_->alarm);
 }
-
 
 /*alarm clock*/
 void thread_alarm(int64_t alarm){
@@ -714,21 +706,52 @@ void thread_wakeup(int64_t ticks){
     if (t -> alarm <= ticks)
     {
       e = list_remove(e);
-      thread_intr_unblock(t);
+      thread_unblock(t);
     }
     else
       break;
   }
 }
 
-// /*Advanced Scheduler*/
+/*Advanced Scheduler*/
 
-// void calc_priority(void){
+void 
+calc_priority(struct thread *t){
+  if(t == idle_thread)
+    return;
+  t->priority = fp_to_round_int((int_fp_sub(PRI_MAX, fp_int_divide(t->recent_cpu, 4)), t->nice *2));
+}
 
-// }
-// void calc_recent_cpu(void){
+void
+update_priority(){
+  struct list_elem *e = list_begin(&all_list);
+  while(e != list_end(&all_list))
+  {
+    calc_priority(list_entry(e, struct thread, elem));
+    e = list_next(e);
+  }
+  list_sort(&ready_list,cmp_priority,NULL);
+}
 
-// }
-// void calc_load_avg(void){
-  
-// }
+void 
+calc_recent_cpu(struct thread *t){
+  t->recent_cpu = fp_int_add(fp_multiply(fp_divide(fp_int_multiply(load_avg,2), fp_int_add(fp_int_multiply(load_avg,2), 1)),t->recent_cpu), t->nice);
+}
+
+void
+update_recent_cpu(){
+  struct list_elem *e = list_begin(&all_list);
+  while(e != list_end(&all_list))
+  {
+    calc_recent_cpu(list_entry(e, struct thread, elem));
+    e = list_next(e);
+  }
+}
+
+void 
+calc_load_avg(void){
+  int cnt_ready = list_size(&ready_list);
+  if(thread_current() != idle_thread)
+    cnt_ready++;
+  load_avg = fp_add(fp_multiply(fp_divide(n_to_fp(59),n_to_fp(60)), load_avg),fp_int_multiply(fp_divide(n_to_fp(1),n_to_fp(60)),cnt_ready));
+}

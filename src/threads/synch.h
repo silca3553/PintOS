@@ -42,7 +42,7 @@ void cond_signal (struct condition *, struct lock *);
 void cond_broadcast (struct condition *, struct lock *);
 
 void donate_priority(struct thread *, struct thread *);
-bool cmp_waiter_priority (const struct list_elem* elem_a, const struct list_elem* elem_b, void * aux);
+bool cmp_wait_priority (const struct list_elem* elem_a, const struct list_elem* elem_b, void * aux);
 
 /* Optimization barrier.
 

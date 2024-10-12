@@ -69,7 +69,10 @@ sema_down (struct semaphore *sema)
   while (sema->value == 0)  //mesa style
     {
       /*Priority Scheduling*/ 
-      list_insert_ordered(&sema->waiters,&thread_current()->elem, cmp_priority,NULL);
+      if(thread_mlfqs)
+        list_push_back(&sema->waiters, &thread_current()->elem);
+      else
+        list_insert_ordered(&sema->waiters,&thread_current()->elem, cmp_priority,NULL);
       thread_block ();
     }
   sema->value--;
@@ -116,8 +119,14 @@ sema_up (struct semaphore *sema)
   old_level = intr_disable ();
   sema->value++;
   if (!list_empty (&sema->waiters)) 
+  {
+    /* Advanced Scheduling */
+    if(thread_mlfqs)
+      list_sort(&sema->waiters, cmp_priority, NULL);
+    
     thread_unblock (list_entry (list_pop_front (&sema->waiters),
                                 struct thread, elem));
+  }
   intr_set_level (old_level);
 }
 
@@ -197,12 +206,13 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
-  // if(thread_mlfqs)
-  // {
-  //   sema_down (&lock->semaphore);
-  //   lock->holder = thread_current ();
-  //   return;
-  // }
+  /* Advanced Scheduling */
+  if(thread_mlfqs)
+  {
+    sema_down (&lock->semaphore);
+    lock->holder = thread_current ();
+    return;
+  }
 
   enum intr_level old_level;
   old_level = intr_disable ();
@@ -254,12 +264,13 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
-  // if(thread_mlfqs)
-  // {
-  //   lock->holder = NULL;
-  //   sema_up (&lock->semaphore);
-  //   return;
-  // }
+  /* Advanced Scheduling */
+  if(thread_mlfqs)
+  {
+    lock->holder = NULL;
+    sema_up (&lock->semaphore);
+    return;
+  }
   
   enum intr_level old_level;
   old_level = intr_disable ();
@@ -359,7 +370,7 @@ cond_wait (struct condition *cond, struct lock *lock)
   waiter.cur_priority = thread_get_priority();
   sema_init (&waiter.semaphore, 0);
   //기존 list_push_back (&cond->waiters, &waiter.elem);
-  list_insert_ordered(&cond->waiters, &waiter.elem, cmp_waiter_priority,NULL);
+  list_insert_ordered(&cond->waiters, &waiter.elem, cmp_wait_priority,NULL);
   lock_release (lock);
   sema_down (&waiter.semaphore);
   lock_acquire (lock);
@@ -367,7 +378,7 @@ cond_wait (struct condition *cond, struct lock *lock)
 
 /*Priority Scheduling*/
 bool
-cmp_waiter_priority (const struct list_elem* elem_a, const struct list_elem* elem_b, void * aux UNUSED)
+cmp_wait_priority (const struct list_elem* elem_a, const struct list_elem* elem_b, void * aux UNUSED)
 {
   int a_pri = list_entry (elem_a, struct semaphore_elem, elem)->cur_priority;
   int b_pri = list_entry (elem_b, struct semaphore_elem, elem)->cur_priority;
