@@ -91,13 +91,19 @@ struct thread
     struct list_elem allelem;           /* List element for all threads list. */
     
     
-    /*alam clock*/
+    /*Alam Clock*/
     int64_t alarm;
     
-    /*priority scheduling*/  
+    /*Priority Scheduling*/  
     int init_priority;                  /* priority가 바뀔 것을 대비해 초기 priority 저장*/
-    struct thread* donate_to;           /* 해당 thread의 priority를 donate 해야하는 thread pointer*/ 
+    struct lock* request_lock;          /* 현재 이 thread가 aquire한 lock*/
+    struct list donation_list;          /* 이 thread에게 donate해준 thread들 list*/
+    struct list_elem donaelem;          /* donate한 thread의 donation_list에 연결되는 list element*/
 
+   //  /*Advanced Scheduling*/
+   //  int nice;
+   //  int recent_cpu;
+    
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
@@ -156,6 +162,52 @@ bool cmp_priority (const struct list_elem* elem_a, const struct list_elem* elem_
 /*alarm clock*/
 void thread_alarm(int64_t alarm);
 void thread_wakeup(int64_t ticks);
+
+/*Advanced Scheduler*/
+
+// void calc_priority(void);
+// void calc_recent_cpu(void);
+// void calc_load_avg(void);
+
+// #define F (1<<4)
+
+// int n_to_fp(int n){
+//    return n * F;
+// }
+
+// int fp_to_int(int x){
+//    return x / F;
+// }
+
+// int fp_to_round_int(int x){
+//    return (x >= 0 ? ((x + F / 2) / F) : ((x - F / 2) / F));
+// }
+
+// int fp_add(int x, int y){
+//    return x+y;
+// }
+// int fp_sub(int x, int y){
+//    return x-y;
+// }
+// int fp_int_add(int x, int n){
+//    return x + n * F;
+// }
+// int fp_int_sub(int x, int n){
+//    return x - n * F;
+// }
+// int fp_multiply(int x, int y){
+//    return ((int64_t) x) * y /F;
+// }
+// int fp_int_multiply(int x, int n){
+//    return x*n;
+// }
+// int fp_divide(int x, int y){
+//    return ((int64_t) x) * F / y;
+// }
+// int fp_int_divide(int x, int n){
+//    return x / n;
+// }
+
 
 
 #endif /* threads/thread.h */

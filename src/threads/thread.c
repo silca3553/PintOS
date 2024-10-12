@@ -62,6 +62,8 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
 
+//int load_avg;
+
 static void kernel_thread (thread_func *, void *aux);
 
 static void idle (void *aux UNUSED);
@@ -114,6 +116,9 @@ thread_start (void)
   struct semaphore idle_started;
   sema_init (&idle_started, 0);
   thread_create ("idle", PRI_MIN, idle, &idle_started);
+
+  /*advanced scheduling*/
+  //load_avg = 0;
 
   /* Start preemptive thread scheduling. */
   intr_enable ();
@@ -383,11 +388,17 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
+  /*Advanced Scheduler*/
+  //if(thread_mlfqs)
+  //  return;
+
   enum intr_level old_level;
   old_level = intr_disable ();
   struct thread* cur = thread_current();
   /*Priority Scheduling*/
-  cur->priority = new_priority;
+  if(cur->priority == cur->init_priority)
+    cur->priority = new_priority;
+  cur->init_priority = new_priority;
 
   /*Priority Scheduling*/
   if(cmp_priority(list_begin(&ready_list),&cur->elem,NULL))
@@ -524,8 +535,13 @@ init_thread (struct thread *t, const char *name, int priority)
   t->alarm = 0;
 
   /*priority scheduling*/
+  t->request_lock = NULL;
+  list_init(&t->donation_list);
   t->init_priority = priority;
-  t->donate_to = NULL;
+
+  /*advanced scheduling*/
+  //t->nice = 0;
+  //t->recent_cpu = 0;
 
   t->magic = THREAD_MAGIC;
 
@@ -704,3 +720,15 @@ void thread_wakeup(int64_t ticks){
       break;
   }
 }
+
+// /*Advanced Scheduler*/
+
+// void calc_priority(void){
+
+// }
+// void calc_recent_cpu(void){
+
+// }
+// void calc_load_avg(void){
+  
+// }
