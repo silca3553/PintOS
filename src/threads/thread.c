@@ -23,7 +23,7 @@
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
-static struct list muti_ready_list[64];
+static struct list multi_ready_list[64];
 
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
@@ -103,7 +103,7 @@ thread_init (void)
 
   /*advanced scheduler*/
   for(int i=0; i< 64; i++)
-    list_init(&muti_ready_list[i]);
+    list_init(&multi_ready_list[i]);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -378,7 +378,7 @@ thread_set_priority (int new_priority)
   cur->init_priority = new_priority;
 
   /*Priority Scheduling*/
-  if(cmp_priority(list_begin(&ready_list),&cur->elem,NULL))
+  if(!list_empty(&ready_list) && cmp_priority(list_begin(&ready_list),&cur->elem,NULL))
     thread_yield();
   intr_set_level (old_level);
 }
@@ -399,8 +399,11 @@ thread_set_nice (int nice UNUSED)
   struct thread* cur = thread_current(); 
   cur->nice = nice;
   calc_priority(cur);
-  if(cmp_priority(list_begin(&ready_list),&cur->elem,NULL))
+  if(!list_empty(&ready_list) && cmp_priority(list_begin(&ready_list),&cur->elem,NULL))
+  {
+    //printf("switch\n");
     thread_yield();
+  }
   intr_set_level(old_level);
 }
 
@@ -529,11 +532,16 @@ init_thread (struct thread *t, const char *name, int priority)
   /*advanced scheduling*/
   if(thread_mlfqs)
   {
-    t->nice = 0;
     if(list_empty(&all_list))
+    {
+      t->nice = 0;
       t->recent_cpu = 0;
+    }
     else
+    {
+      t->nice = thread_current()->nice;
       t->recent_cpu = thread_current()->recent_cpu;
+    }
   }
 
   t->magic = THREAD_MAGIC;
@@ -719,7 +727,9 @@ void
 calc_priority(struct thread *t){
   if(t == idle_thread)
     return;
-  t->priority = fp_to_round_int((int_fp_sub(PRI_MAX, fp_int_divide(t->recent_cpu, 4)), t->nice *2));
+  //printf("(calc_prioirty) priority: %d ",t->priority);
+  t->priority = fp_to_round_int(fp_int_sub(int_fp_sub(PRI_MAX, fp_int_divide(t->recent_cpu, 4)), t->nice *2));
+  //printf("nice: %d, recent_cpu: %d new priority: %d\n",  t->nice , t->recent_cpu, t->priority);
 }
 
 void
@@ -727,15 +737,22 @@ update_priority(){
   struct list_elem *e = list_begin(&all_list);
   while(e != list_end(&all_list))
   {
-    calc_priority(list_entry(e, struct thread, elem));
+    calc_priority(list_entry(e, struct thread, allelem));
     e = list_next(e);
   }
   list_sort(&ready_list,cmp_priority,NULL);
+  if(cmp_priority(list_begin(&ready_list),&thread_current()->elem,NULL))
+  { 
+    intr_yield_on_return();
+  }
 }
 
 void 
 calc_recent_cpu(struct thread *t){
+  if(t==idle_thread)
+    return;
   t->recent_cpu = fp_int_add(fp_multiply(fp_divide(fp_int_multiply(load_avg,2), fp_int_add(fp_int_multiply(load_avg,2), 1)),t->recent_cpu), t->nice);
+  //printf("(calc_recent_cpu) load_avg: %d nice: %d new: %d\n",load_avg, t->nice,t->recent_cpu);
 }
 
 void
@@ -743,7 +760,7 @@ update_recent_cpu(){
   struct list_elem *e = list_begin(&all_list);
   while(e != list_end(&all_list))
   {
-    calc_recent_cpu(list_entry(e, struct thread, elem));
+    calc_recent_cpu(list_entry(e, struct thread, allelem));
     e = list_next(e);
   }
 }
@@ -754,4 +771,10 @@ calc_load_avg(void){
   if(thread_current() != idle_thread)
     cnt_ready++;
   load_avg = fp_add(fp_multiply(fp_divide(n_to_fp(59),n_to_fp(60)), load_avg),fp_int_multiply(fp_divide(n_to_fp(1),n_to_fp(60)),cnt_ready));
+  //printf("(calc_load_avg) cnt_ready: %d load_avg: %d\n",cnt_ready,load_avg);
+}
+
+bool is_idle(struct thread* cur)
+{
+  return cur == idle_thread;
 }

@@ -180,11 +180,13 @@ timer_interrupt (struct intr_frame *args UNUSED)
   /*Advanced Scheduling*/
   if(thread_mlfqs)
   {
-    thread_current()->recent_cpu = fp_int_add(thread_current()->recent_cpu, 1);
+    struct thread* cur = thread_current();
+    if(!is_idle(cur))
+      cur->recent_cpu = fp_int_add(cur->recent_cpu, 1);
+
     if(ticks % 4 == 0)
-    {
       update_priority();
-    }
+    
     if(ticks % TIMER_FREQ == 0)
     {
       update_recent_cpu();
