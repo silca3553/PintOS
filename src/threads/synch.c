@@ -405,7 +405,9 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
 
   if (!list_empty (&cond->waiters))
   {
-    list_sort(&cond->waiters, cmp_wait_priority, NULL);
+    if(thread_mlfqs)
+      list_sort(&cond->waiters, cmp_wait_priority, NULL);
+      
     sema_up (&list_entry (list_pop_front (&cond->waiters),
                           struct semaphore_elem, elem)->semaphore);
   }

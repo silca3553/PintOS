@@ -23,7 +23,6 @@
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
-static struct list multi_ready_list[64];
 
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
@@ -98,12 +97,9 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
+
   /*alarm clock*/
   list_init(&sleep_list);
-
-  /*advanced scheduler*/
-  for(int i=0; i< 64; i++)
-    list_init(&multi_ready_list[i]);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -419,21 +415,14 @@ thread_get_nice (void)
 int
 thread_get_load_avg (void) 
 {
-  enum intr_level old_level = intr_disable ();
-  int int_load_avg = fp_to_round_int(fp_int_multiply(load_avg, 100));
-  intr_set_level(old_level);
-  return int_load_avg;
+  return fp_to_round_int(fp_int_multiply(load_avg, 100));;
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  enum intr_level old_level = intr_disable ();
-  int fp_recent = thread_current()->recent_cpu;
-  int int_recent = fp_to_round_int(fp_int_multiply(fp_recent,100));
-  intr_set_level (old_level);
-  return int_recent;
+  return fp_to_round_int(fp_int_multiply(thread_current()->recent_cpu,100));
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -729,6 +718,11 @@ calc_priority(struct thread *t){
     return;
 
   t->priority = fp_to_round_int(fp_int_sub(int_fp_sub(PRI_MAX, fp_int_divide(t->recent_cpu, 4)), t->nice *2));
+  
+  if(t->priority<0)
+    t->priority = 0;
+  else if(t->priority>63)
+    t->priority = 63;
 }
 
 void
