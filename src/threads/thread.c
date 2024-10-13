@@ -333,11 +333,12 @@ thread_yield (void)
   enum intr_level old_level;
   
   ASSERT (!intr_context ());
-
   old_level = intr_disable ();
+
   /*Priority Scheduling*/
   if (cur != idle_thread) 
     list_insert_ordered(&ready_list, &cur->elem, cmp_priority, NULL);
+
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -372,6 +373,7 @@ thread_set_priority (int new_priority)
   enum intr_level old_level;
   old_level = intr_disable ();
   struct thread* cur = thread_current();
+
   /*Priority Scheduling*/
   if(cur->priority == cur->init_priority)
     cur->priority = new_priority;
@@ -399,11 +401,10 @@ thread_set_nice (int nice UNUSED)
   struct thread* cur = thread_current(); 
   cur->nice = nice;
   calc_priority(cur);
+  
   if(!list_empty(&ready_list) && cmp_priority(list_begin(&ready_list),&cur->elem,NULL))
-  {
-    //printf("switch\n");
     thread_yield();
-  }
+
   intr_set_level(old_level);
 }
 
@@ -575,7 +576,6 @@ next_thread_to_run (void)
   if (list_empty (&ready_list))
     return idle_thread;
   else
-    //if(!is_sorted() ? list_sort() | {})
     return list_entry (list_pop_front (&ready_list), struct thread, elem);
 }
 
@@ -727,9 +727,8 @@ void
 calc_priority(struct thread *t){
   if(t == idle_thread)
     return;
-  //printf("(calc_prioirty) priority: %d ",t->priority);
+
   t->priority = fp_to_round_int(fp_int_sub(int_fp_sub(PRI_MAX, fp_int_divide(t->recent_cpu, 4)), t->nice *2));
-  //printf("nice: %d, recent_cpu: %d new priority: %d\n",  t->nice , t->recent_cpu, t->priority);
 }
 
 void
@@ -740,11 +739,11 @@ update_priority(){
     calc_priority(list_entry(e, struct thread, allelem));
     e = list_next(e);
   }
+  
   list_sort(&ready_list,cmp_priority,NULL);
+
   if(cmp_priority(list_begin(&ready_list),&thread_current()->elem,NULL))
-  { 
     intr_yield_on_return();
-  }
 }
 
 void 
@@ -752,7 +751,6 @@ calc_recent_cpu(struct thread *t){
   if(t==idle_thread)
     return;
   t->recent_cpu = fp_int_add(fp_multiply(fp_divide(fp_int_multiply(load_avg,2), fp_int_add(fp_int_multiply(load_avg,2), 1)),t->recent_cpu), t->nice);
-  //printf("(calc_recent_cpu) load_avg: %d nice: %d new: %d\n",load_avg, t->nice,t->recent_cpu);
 }
 
 void
@@ -771,7 +769,6 @@ calc_load_avg(void){
   if(thread_current() != idle_thread)
     cnt_ready++;
   load_avg = fp_add(fp_multiply(fp_divide(n_to_fp(59),n_to_fp(60)), load_avg),fp_int_multiply(fp_divide(n_to_fp(1),n_to_fp(60)),cnt_ready));
-  //printf("(calc_load_avg) cnt_ready: %d load_avg: %d\n",cnt_ready,load_avg);
 }
 
 bool is_idle(struct thread* cur)
