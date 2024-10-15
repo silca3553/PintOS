@@ -62,6 +62,8 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
 
+int load_avg;
+
 static void kernel_thread (thread_func *, void *aux);
 
 static void idle (void *aux UNUSED);
@@ -95,6 +97,7 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
+
   /*alarm clock*/
   list_init(&sleep_list);
 
@@ -114,6 +117,9 @@ thread_start (void)
   struct semaphore idle_started;
   sema_init (&idle_started, 0);
   thread_create ("idle", PRI_MIN, idle, &idle_started);
+
+  /*advanced scheduling*/
+  load_avg = 0;
 
   /* Start preemptive thread scheduling. */
   intr_enable ();
@@ -242,10 +248,21 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem); //list_insert_orderd로 바꾸기?
+
+  /*Priority Scheduling*/
+  //list_push_back() 대신 넣음
+  list_insert_ordered(&ready_list, &t->elem, cmp_priority, NULL);
   t->status = THREAD_READY;
-  //t->priority ? current_thread()->priority 확인 후
-  //t가 더 높다면 thread_yield() 호출.
+
+  //새로 ready 된 thread가 running thread 보다 priority가 높다면 바로 switching
+  if(t->priority > thread_get_priority())
+  {
+    if(intr_context())
+      intr_yield_on_return();
+    else
+      thread_yield();
+  }
+
   intr_set_level (old_level);
 }
 
@@ -312,14 +329,17 @@ thread_yield (void)
   enum intr_level old_level;
   
   ASSERT (!intr_context ());
-
   old_level = intr_disable ();
+
+  /*Priority Scheduling*/
   if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem); //list_insert_ordered()
+    list_insert_ordered(&ready_list, &cur->elem, cmp_priority, NULL);
+
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
 }
+
 
 /* Invoke function 'func' on all threads, passing along 'aux'.
    This function must be called with interrupts off. */
@@ -342,10 +362,23 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
-  //ready_list pop_front 해서 그 thread의 priority와 비교하고 
-  //기존 게 더 높으면 pop한 거 다시 ready list에 넣고 
-  //ready가 더 높으면 yield 호출.
+  /*Advanced Scheduler*/
+  if(thread_mlfqs)
+   return;
+
+  enum intr_level old_level;
+  old_level = intr_disable ();
+  struct thread* cur = thread_current();
+
+  /*Priority Scheduling*/
+  if(cur->priority == cur->init_priority)
+    cur->priority = new_priority;
+  cur->init_priority = new_priority;
+
+  /*Priority Scheduling*/
+  if(!list_empty(&ready_list) && cmp_priority(list_begin(&ready_list),&cur->elem,NULL))
+    thread_yield();
+  intr_set_level (old_level);
 }
 
 /* Returns the current thread's priority. */
@@ -355,35 +388,41 @@ thread_get_priority (void)
   return thread_current ()->priority;
 }
 
+
 /* Sets the current thread's nice value to NICE. */
 void
 thread_set_nice (int nice UNUSED) 
 {
-  /* Not yet implemented. */
+  enum intr_level old_level = intr_disable();
+  struct thread* cur = thread_current(); 
+  cur->nice = nice;
+  calc_priority(cur);
+  
+  if(!list_empty(&ready_list) && cmp_priority(list_begin(&ready_list),&cur->elem,NULL))
+    thread_yield();
+
+  intr_set_level(old_level);
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return thread_current()->nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return fp_to_round_int(fp_int_multiply(load_avg, 100));;
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return fp_to_round_int(fp_int_multiply(thread_current()->recent_cpu,100));
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -473,7 +512,28 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   /*alarm clock*/
-  t->alarm = NULL;
+  t->alarm = 0;
+
+  /*priority scheduling*/
+  t->request_lock = NULL;
+  list_init(&t->donation_list);
+  t->init_priority = priority;
+
+  /*advanced scheduling*/
+  if(thread_mlfqs)
+  {
+    if(list_empty(&all_list))
+    {
+      t->nice = 0;
+      t->recent_cpu = 0;
+    }
+    else
+    {
+      t->nice = thread_current()->nice;
+      t->recent_cpu = thread_current()->recent_cpu;
+    }
+  }
+
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
@@ -505,7 +565,6 @@ next_thread_to_run (void)
   if (list_empty (&ready_list))
     return idle_thread;
   else
-    //if(!is_sorted() ? list_sort() | {})
     return list_entry (list_pop_front (&ready_list), struct thread, elem);
 }
 
@@ -596,28 +655,117 @@ allocate_tid (void)
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
-/*alarm clock*/
 
+/* return true if the priority of thread holding elem_a is bigger than elem_b's*/
+//내림차순 정렬
+bool
+cmp_priority (const struct list_elem* elem_a, const struct list_elem* elem_b, void *aux UNUSED)
+{
+  int a_pri = list_entry (elem_a, struct thread, elem)->priority;
+  int b_pri = list_entry (elem_b, struct thread, elem)->priority;
+  return a_pri > b_pri;
+}
+
+//오름차순 정렬
+bool 
+cmp_alarm(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+  struct thread *a_ = list_entry(a, struct thread, elem);
+  struct thread *b_ = list_entry(b, struct thread, elem);
+  return (a_->alarm < b_->alarm);
+}
+
+/*alarm clock*/
 void thread_alarm(int64_t alarm){
   enum intr_level old_level;
+
+  struct thread *t;
+
   old_level = intr_disable ();
-  struct thread *t = thread_current();
+  t = thread_current();
+
   t->alarm = alarm;
-  list_less_func less;
-  list_insert_ordered (&sleep_list, &t->elem, !less, &t->alarm);
+  list_insert_ordered (&sleep_list, &t->elem, cmp_alarm, &t->alarm);
+
   thread_block();
+
+  intr_set_level(old_level);
 }
 
 void thread_wakeup(int64_t ticks){
   
-  struct list_elem *e = list_front(&sleep_list);
-  struct thread* t = list_entry(e, struct thread, elem);
-  list_less_func less;
+  struct thread *t;
+  struct list_elem *e = list_begin(&sleep_list);
 
-  while (t->alarm <= ticks){
-    e = list_remove(e);
-    thread_unblock(t);
-    t = list_entry(e, struct thread, elem);
+  while( e != list_end (&sleep_list))
+  {
+    t= list_entry(e, struct thread, elem);
+    if (t -> alarm <= ticks)
+    {
+      e = list_remove(e);
+      thread_unblock(t);
+    }
+    else
+      break;
   }
 }
 
+/*Advanced Scheduler*/
+
+void 
+calc_priority(struct thread *t){
+  if(t == idle_thread)
+    return;
+
+  t->priority = fp_to_round_int(fp_int_sub(int_fp_sub(PRI_MAX, fp_int_divide(t->recent_cpu, 4)), t->nice *2));
+  
+  if(t->priority<0)
+    t->priority = 0;
+  else if(t->priority>63)
+    t->priority = 63;
+}
+
+void
+update_priority(){
+  struct list_elem *e = list_begin(&all_list);
+  while(e != list_end(&all_list))
+  {
+    calc_priority(list_entry(e, struct thread, allelem));
+    e = list_next(e);
+  }
+  
+  list_sort(&ready_list,cmp_priority,NULL);
+
+  if(cmp_priority(list_begin(&ready_list),&thread_current()->elem,NULL))
+    intr_yield_on_return();
+}
+
+void 
+calc_recent_cpu(struct thread *t){
+  if(t==idle_thread)
+    return;
+  t->recent_cpu = fp_int_add(fp_multiply(fp_divide(fp_int_multiply(load_avg,2), fp_int_add(fp_int_multiply(load_avg,2), 1)),t->recent_cpu), t->nice);
+}
+
+void
+update_recent_cpu(){
+  struct list_elem *e = list_begin(&all_list);
+  while(e != list_end(&all_list))
+  {
+    calc_recent_cpu(list_entry(e, struct thread, allelem));
+    e = list_next(e);
+  }
+}
+
+void 
+calc_load_avg(void){
+  int cnt_ready = list_size(&ready_list);
+  if(thread_current() != idle_thread)
+    cnt_ready++;
+  load_avg = fp_add(fp_multiply(fp_divide(n_to_fp(59),n_to_fp(60)), load_avg),fp_int_multiply(fp_divide(n_to_fp(1),n_to_fp(60)),cnt_ready));
+}
+
+bool is_idle(struct thread* cur)
+{
+  return cur == idle_thread;
+}

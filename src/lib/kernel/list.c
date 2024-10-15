@@ -522,3 +522,21 @@ list_min (struct list *list, list_less_func *less, void *aux)
     }
   return min;
 }
+
+/* list_elem a를 본인이 속한 list의 으로 이동시키는 함수 */
+void move_to_front(struct list_elem *a, list_less_func *less) {
+    if (is_head(a->prev))
+      return;
+  
+    struct list_elem *front;
+
+    for(front = a->prev; !is_head(front) && less(a,front,NULL); front = list_prev(front)){}
+
+    list_remove(a);
+
+    a->prev = front;
+    a->next = front->next;
+
+    front->next->prev = a;
+    front->next = a;
+}

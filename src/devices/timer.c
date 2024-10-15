@@ -177,6 +177,23 @@ timer_interrupt (struct intr_frame *args UNUSED)
   ticks++;
   thread_tick ();
 
+  /*Advanced Scheduling*/
+  if(thread_mlfqs)
+  {
+    struct thread* cur = thread_current();
+    if(!is_idle(cur))
+      cur->recent_cpu = fp_int_add(cur->recent_cpu, 1);
+
+    if(ticks % 4 == 0)
+      update_priority();
+    
+    if(ticks % TIMER_FREQ == 0)
+    {
+      update_recent_cpu();
+      calc_load_avg();
+    }
+  }
+  
   /*alarm clock*/
   thread_wakeup(ticks);
 }

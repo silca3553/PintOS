@@ -90,9 +90,20 @@ struct thread
     int priority;                       /* Priority. */
     struct list_elem allelem;           /* List element for all threads list. */
     
-    /*alam clock*/
+    
+    /*Alam Clock*/
     int64_t alarm;
+    
+    /*Priority Scheduling*/  
+    int init_priority;                  /* priority가 바뀔 것을 대비해 초기 priority 저장*/
+    struct lock* request_lock;          /* 현재 이 thread가 acquire한 lock*/
+    struct list donation_list;          /* 이 thread에게 donate해준 thread들 list*/
+    struct list_elem donaelem;          /* donate한 thread의 donation_list에 연결되는 list element*/
 
+    /*Advanced Scheduling*/
+    int nice;
+    int recent_cpu;
+    
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
@@ -122,6 +133,7 @@ tid_t thread_create (const char *name, int priority, thread_func *, void *);
 void thread_block (void);
 void thread_unblock (struct thread *);
 
+bool is_idle(struct thread*);
 struct thread *thread_current (void);
 tid_t thread_tid (void);
 const char *thread_name (void);
@@ -141,9 +153,63 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
-/*alarm clock*/
+/*compare function*/
+bool cmp_alarm(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+bool cmp_priority (const struct list_elem* elem_a, const struct list_elem* elem_b, void * aux UNUSED);
 
+/*alarm clock*/
 void thread_alarm(int64_t alarm);
 void thread_wakeup(int64_t ticks);
+
+/*Advanced Scheduler*/
+void calc_priority(struct thread *t);
+void calc_recent_cpu(struct thread *t);
+void calc_load_avg(void);
+void update_priority(void);
+void update_recent_cpu(void);
+
+#define F (1<<14)
+
+inline int n_to_fp(int n){
+   return n * F;
+}
+inline int fp_to_int(int x){
+   return x / F;
+}
+inline int fp_to_round_int(int x){
+   return (x >= 0 ? ((x + F / 2) / F) : ((x - F / 2) / F));
+}
+inline int fp_add(int x, int y){
+   return x+y;
+}
+inline int fp_sub(int x, int y){
+   return x-y;
+}
+inline int fp_int_add(int x, int n){
+   return x + n * F;
+}
+inline int int_fp_add(int n, int x){
+   return x + n * F;
+}
+inline int fp_int_sub(int x, int n){
+   return x - n * F;
+}
+inline int int_fp_sub(int n, int x){
+   return n * F - x;
+}
+inline int fp_multiply(int x, int y){
+   return ((int64_t) x) * y /F;
+}
+inline int fp_int_multiply(int x, int n){
+   return x*n;
+}
+inline int fp_divide(int x, int y){
+   return ((int64_t) x) * F / y;
+}
+inline int fp_int_divide(int x, int n){
+   return x / n;
+}
+
+
 
 #endif /* threads/thread.h */
