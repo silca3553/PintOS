@@ -101,6 +101,10 @@ thread_init (void)
   /*alarm clock*/
   list_init(&sleep_list);
 
+  // #ifdef USERPROG
+  //   list_init(&child_list);
+  // #endif
+
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);

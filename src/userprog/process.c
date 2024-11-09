@@ -40,17 +40,22 @@ process_execute (const char *file_name)
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
+  
   return tid;
 }
+
+
+void init_user_stack(int argc, char **argv, struct intr_frame *if_);
 
 /* A thread function that loads a user process and starts it
    running. */
 static void
 start_process (void *file_name_)
 {
-  char *file_name = file_name_;
+  char *file_name = file_name_; //"init.py a b c" ..
   struct intr_frame if_;
   bool success;
 
@@ -59,13 +64,30 @@ start_process (void *file_name_)
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
+
+  /*Argument Passing*/
+  char* file_argv[LOADER_ARGS_LEN]; 
+  char* next;
+  int argc = 0;
+  strtok_r(file_name," ", &next); //file name 과 arg 사이 NULL 넣어주고, next 이동
+  do
+  {
+    file_argv[argc] = strtok_r(NULL," ", &next);
+  }while (file_argv[argc++] != NULL);
+  argc--;
+
+  /*Argument Passing*/
   success = load (file_name, &if_.eip, &if_.esp);
 
+  init_user_stack(argc, file_argv, &if_);
+
+  hex_dump(if_.esp,if_.esp,PHYS_BASE-if_.esp,true);
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  if (!success) 
-    thread_exit ();
 
+  if (!success)
+    thread_exit ();
+  
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
@@ -74,6 +96,44 @@ start_process (void *file_name_)
      and jump to it. */
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
+}
+
+/*Argument Passing*/
+void init_user_stack(int argc, char *argv[LOADER_ARGS_LEN], struct intr_frame *if_)
+{
+  char *addr[LOADER_ARGS_LEN];
+  int argvSize = 0;
+
+  addr[argc] = 0;
+  for(int i = argc-1; i >=0; i--)
+  { 
+    int len = strlen(argv[i]) + 1; //+null pointer sentinel
+    if_->esp -= len;
+    memcpy(if_->esp, argv[i], len);
+    addr[i] = if_->esp;
+    argvSize += len;
+  }
+
+  if_->esp -= (4 - argvSize % 4) % 4; //for fast world-align access
+
+  for(int i = argc; i>=0; i--)
+  {
+    if_->esp -= 4;
+    printf("addr: %p\n",addr[i]);
+    *(char **)(if_->esp) = addr[i];
+  }
+
+  //argv
+  if_->esp -= 4; 
+  *(char ***)(if_->esp) = if_->esp + 4;
+
+  //argc
+  if_->esp -= 4; 
+  *(int *)(if_->esp) = argc;
+
+  //return address
+  if_->esp -= 4;
+  *(uint32_t *)(if_->esp) = 0;
 }
 
 /* Waits for thread TID to die and returns its exit status.  If
@@ -88,6 +148,8 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
+  while(1){}
+  
   return -1;
 }
 
@@ -217,9 +279,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
-  if (t->pagedir == NULL) 
+  if (t->pagedir == NULL)
     goto done;
-  process_activate ();
+  process_activate (); //set tss, %cr3=pd
 
   /* Open executable file. */
   file = filesys_open (file_name);
@@ -241,10 +303,13 @@ load (const char *file_name, void (**eip) (void), void **esp)
       printf ("load: %s: error loading executable\n", file_name);
       goto done; 
     }
+  
+  /*Denying Writes*/
+  //file_deny_write(file);
 
   /* Read program headers. */
-  file_ofs = ehdr.e_phoff;
-  for (i = 0; i < ehdr.e_phnum; i++) 
+  file_ofs = ehdr.e_phoff;  //program header table offset
+  for (i = 0; i < ehdr.e_phnum; i++) //program header number
     {
       struct Elf32_Phdr phdr;
 
@@ -272,17 +337,17 @@ load (const char *file_name, void (**eip) (void), void **esp)
           if (validate_segment (&phdr, file)) 
             {
               bool writable = (phdr.p_flags & PF_W) != 0;
-              uint32_t file_page = phdr.p_offset & ~PGMASK;
-              uint32_t mem_page = phdr.p_vaddr & ~PGMASK;
+              uint32_t file_page = phdr.p_offset & ~PGMASK; //file에서 program의 page 단위 offset
+              uint32_t mem_page = phdr.p_vaddr & ~PGMASK; //memory에 로드 시 page address
               uint32_t page_offset = phdr.p_vaddr & PGMASK;
               uint32_t read_bytes, zero_bytes;
-              if (phdr.p_filesz > 0)
+              if (phdr.p_filesz > 0) //segment size in file
                 {
                   /* Normal segment.
                      Read initial part from disk and zero the rest. */
-                  read_bytes = page_offset + phdr.p_filesz;
+                  read_bytes = page_offset + phdr.p_filesz; //파일에서 읽어와야하는 총 size
                   zero_bytes = (ROUND_UP (page_offset + phdr.p_memsz, PGSIZE)
-                                - read_bytes);
+                                - read_bytes); //메모리 적재 시 실제로 필요한 page size - read_bytes
                 }
               else 
                 {
@@ -313,6 +378,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
  done:
   /* We arrive here whether the load is successful or not. */
   file_close (file);
+  /*Denying writes*/
+  //file_allow_write(file);
   return success;
 }
 
@@ -427,13 +494,13 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
 static bool
-setup_stack (void **esp) 
+setup_stack (void **esp)
 {
   uint8_t *kpage;
   bool success = false;
 
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-  if (kpage != NULL) 
+  if (kpage != NULL)
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
@@ -454,7 +521,7 @@ setup_stack (void **esp)
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
 static bool
-install_page (void *upage, void *kpage, bool writable)
+install_page (void *upage, void *kpage, bool writable) //user vm을 실제로 데이터가 저장된 kpage(kerenl vm)이 가리키는 실제 PA와 mapping 한다.
 {
   struct thread *t = thread_current ();
 

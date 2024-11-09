@@ -82,8 +82,8 @@ main (void)
   bss_init ();
 
   /* Break command line into arguments and parse options. */
-  argv = read_command_line ();
-  argv = parse_options (argv);
+  argv = read_command_line (); //only read one command line ex) -q \n -f \n extract \n run \n a b
+  argv = parse_options (argv); //extract \n run \n a b
 
   /* Initialize ourselves as a thread so we can use locks,
      then enable console locking. */
@@ -161,20 +161,20 @@ paging_init (void)
   size_t page;
   extern char _start, _end_kernel_text;
 
-  pd = init_page_dir = palloc_get_page (PAL_ASSERT | PAL_ZERO);
-  pt = NULL;
-  for (page = 0; page < init_ram_pages; page++)
+  pd = init_page_dir = palloc_get_page (PAL_ASSERT | PAL_ZERO); //virtual page directory address
+  pt = NULL; //vitual page table address
+  for (page = 0; page < init_ram_pages; page++) //전체 virtual memory address를 phyisical memeory에 mapping 하는 과정
     {
-      uintptr_t paddr = page * PGSIZE;
-      char *vaddr = ptov (paddr);
-      size_t pde_idx = pd_no (vaddr);
-      size_t pte_idx = pt_no (vaddr);
+      uintptr_t paddr = page * PGSIZE; //0,4k,8k, .... physical page address
+      char *vaddr = ptov (paddr); //padder + PHYS_BASE
+      size_t pde_idx = pd_no (vaddr); //31~22 10bit
+      size_t pte_idx = pt_no (vaddr); //21~12 10bit
       bool in_kernel_text = &_start <= vaddr && vaddr < &_end_kernel_text;
 
-      if (pd[pde_idx] == 0)
+      if (pd[pde_idx] == 0) //새로운 virtual kernel page table을 만들고, physical kernel page table과 mapping 한다. 
         {
-          pt = palloc_get_page (PAL_ASSERT | PAL_ZERO);
-          pd[pde_idx] = pde_create (pt);
+          pt = palloc_get_page (PAL_ASSERT | PAL_ZERO); //new virtual page address
+          pd[pde_idx] = pde_create (pt); //chanege to VM to PM and add P,U,W offset (still 32bit address)
         }
 
       pt[pte_idx] = pte_create_kernel (vaddr, !in_kernel_text);
@@ -207,7 +207,7 @@ read_command_line (void)
         PANIC ("command line arguments overflow");
 
       argv[i] = p;
-      p += strnlen (p, end - p) + 1;
+      p += strnlen (p, end - p) + 1; // slice before '\0'  
     }
   argv[argc] = NULL;
 
@@ -228,11 +228,11 @@ read_command_line (void)
 static char **
 parse_options (char **argv) 
 {
-  for (; *argv != NULL && **argv == '-'; argv++)
+  for (; *argv != NULL && **argv == '-'; argv++) //-q=value
     {
       char *save_ptr;
-      char *name = strtok_r (*argv, "=", &save_ptr);
-      char *value = strtok_r (NULL, "", &save_ptr);
+      char *name = strtok_r (*argv, "=", &save_ptr); //-q
+      char *value = strtok_r (NULL, "", &save_ptr); //value
       
       if (!strcmp (name, "-h"))
         usage ();
@@ -274,7 +274,7 @@ parse_options (char **argv)
      the pintos script to request real-time execution. */
   random_init (rtc_get_time ());
   
-  return argv;
+  return argv; //앞에 인자가 제거된 명령어만 남는다.
 }
 
 /* Runs the task specified in ARGV[1]. */
