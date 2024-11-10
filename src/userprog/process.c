@@ -17,6 +17,7 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/synch.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -36,14 +37,16 @@ process_execute (const char *file_name)
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
-  strlcpy (fn_copy, file_name, PGSIZE);
-
+  strlcpy (fn_copy, file_name, PGSIZE); 
+  
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-  
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
   
+  struct thread* child = get_thread_with_tid(tid);
+  list_push_back(&thread_current()->child_list, &child->child_elem);
+
   return tid;
 }
 
@@ -55,7 +58,7 @@ void init_user_stack(int argc, char **argv, struct intr_frame *if_);
 static void
 start_process (void *file_name_)
 {
-  char *file_name = file_name_; //"init.py a b c" ..
+  char *file_name = file_name_; //"init.py a b c\n" ..
   struct intr_frame if_;
   bool success;
 
@@ -66,22 +69,24 @@ start_process (void *file_name_)
   if_.eflags = FLAG_IF | FLAG_MBS;
 
   /*Argument Passing*/
-  char* file_argv[LOADER_ARGS_LEN]; 
   char* next;
+  char* file_argv[LOADER_ARGS_LEN]; 
   int argc = 0;
-  strtok_r(file_name," ", &next); //file name 과 arg 사이 NULL 넣어주고, next 이동
+  strtok_r(file_name," ", &next);
+  strlcpy (thread_current()->name, file_name, sizeof thread_current()->name); //change thread name
   do
   {
     file_argv[argc] = strtok_r(NULL," ", &next);
   }while (file_argv[argc++] != NULL);
   argc--;
 
-  /*Argument Passing*/
   success = load (file_name, &if_.eip, &if_.esp);
 
+  /*Argument Passing*/
   init_user_stack(argc, file_argv, &if_);
 
-  hex_dump(if_.esp,if_.esp,PHYS_BASE-if_.esp,true);
+  //hex_dump(if_.esp,if_.esp,PHYS_BASE-if_.esp,true);
+  
   /* If load failed, quit. */
   palloc_free_page (file_name);
 
@@ -119,7 +124,6 @@ void init_user_stack(int argc, char *argv[LOADER_ARGS_LEN], struct intr_frame *i
   for(int i = argc; i>=0; i--)
   {
     if_->esp -= 4;
-    printf("addr: %p\n",addr[i]);
     *(char **)(if_->esp) = addr[i];
   }
 
@@ -148,9 +152,28 @@ void init_user_stack(int argc, char *argv[LOADER_ARGS_LEN], struct intr_frame *i
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  while(1){}
+  struct thread* cur = thread_current();
   
-  return -1;
+  //child process가 맞는지 확인
+  struct list_elem* e = list_front(&cur->child_list);
+  struct thread* child = NULL;
+  while(e != list_end(&cur->child_list))
+  {
+    if(child_tid == list_entry(e, struct thread, child_elem)->tid)
+    {
+      child = list_entry(e, struct thread, child_elem);
+      break;
+    }
+    e = list_next(e);
+  }
+  if(child == NULL) //이거 되나?
+    return -1;
+
+  sema_down(&child->sema_wait);
+  int status = child->exit_code;
+  list_remove(&child->child_elem);
+  sema_up(&child->sema_exit);
+  return status;
 }
 
 /* Free the current process's resources. */

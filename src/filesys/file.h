@@ -26,4 +26,11 @@ void file_seek (struct file *, off_t);
 off_t file_tell (struct file *);
 off_t file_length (struct file *);
 
+/* SYSTEM CALL */
+// struct fd
+// {
+//     int fd;
+//     const char* filename;
+//     struct list_elem fd_elem;
+// };
 #endif /* filesys/file.h */

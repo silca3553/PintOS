@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -100,10 +101,6 @@ thread_init (void)
 
   /*alarm clock*/
   list_init(&sleep_list);
-
-  // #ifdef USERPROG
-  //   list_init(&child_list);
-  // #endif
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -523,6 +520,20 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init(&t->donation_list);
   t->init_priority = priority;
 
+/* SYSTEM CALL */
+#ifdef USERPROG
+  list_init(&t->child_list);
+  sema_init(&t->sema_wait, 0);
+  sema_init(&t->sema_exit, 0);
+  t->exit_code = -1;
+  //t->fdt[0] = 0;
+  //t->fdt[1] = 1;
+  //t->fd_count = 2;
+  //for (int i = fd_count; i < 128; i++) {
+  //  fdt[i] = NULL;  
+  //}
+#endif
+
   /*advanced scheduling*/
   if(thread_mlfqs)
   {
@@ -773,3 +784,21 @@ bool is_idle(struct thread* cur)
 {
   return cur == idle_thread;
 }
+
+/*Project 2*/
+#ifdef USERPROG
+struct thread* get_thread_with_tid(tid_t tid)
+{
+  struct list_elem* e = list_front(&all_list);
+  struct thread* t = NULL;
+  while(e != list_end(&all_list)){
+    if(tid == list_entry(e, struct thread, allelem)->tid)
+    {
+      t = list_entry(e, struct thread, allelem);
+      break;
+    }
+    e = list_next(e);
+  }
+  return t;
+}
+#endif

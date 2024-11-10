@@ -4,6 +4,8 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "synch.h"
+//#define USERPROG
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -90,7 +92,6 @@ struct thread
     int priority;                       /* Priority. */
     struct list_elem allelem;           /* List element for all threads list. */
     
-    
     /*Alam Clock*/
     int64_t alarm;
     
@@ -110,8 +111,17 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
-   //  struct list child_list; /*system call*/
-   //  int error_code;/*system call*/
+
+    /*system call*/
+    struct list child_list; 
+    struct list_elem child_elem;
+    int exit_code;
+    struct semaphore sema_wait;
+    struct semaphore sema_exit;
+
+    /*system call-file*/
+    //struct file* fdt[128];
+    //int fd_count;
 #endif
     
     /* Owned by thread.c. */
@@ -212,6 +222,9 @@ inline int fp_int_divide(int x, int n){
    return x / n;
 }
 
-
+/*Project 2*/
+#ifdef USERPROG
+struct thread* get_thread_with_tid(tid_t tid);
+#endif
 
 #endif /* threads/thread.h */
