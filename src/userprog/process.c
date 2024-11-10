@@ -42,11 +42,19 @@ process_execute (const char *file_name)
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+  {
+    palloc_free_page (fn_copy);
+    return -1;
+  }
   
   struct thread* child = get_thread_with_tid(tid);
+  sema_down(&child->sema_file1);
+  if(!child->is_file_valid)
+    return -1;
+    
+  sema_up(&child->sema_file2);
   list_push_back(&thread_current()->child_list, &child->child_elem);
-
+  //printf("execute %s in %s\n",thread_current()->name,child->name);
   return tid;
 }
 
@@ -61,6 +69,7 @@ start_process (void *file_name_)
   char *file_name = file_name_; //"init.py a b c\n" ..
   struct intr_frame if_;
   bool success;
+  struct thread* cur = thread_current();
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -72,8 +81,9 @@ start_process (void *file_name_)
   char* next;
   char* file_argv[LOADER_ARGS_LEN]; 
   int argc = 0;
-  strtok_r(file_name," ", &next);
-  strlcpy (thread_current()->name, file_name, sizeof thread_current()->name); //change thread name
+  file_argv[argc++] = strtok_r(file_name," ", &next);
+  strlcpy (cur->name, file_name, sizeof cur->name); //change thread name
+  
   do
   {
     file_argv[argc] = strtok_r(NULL," ", &next);
@@ -81,6 +91,10 @@ start_process (void *file_name_)
   argc--;
 
   success = load (file_name, &if_.eip, &if_.esp);
+
+  cur->is_file_valid = success;
+  sema_up(&cur->sema_file1);
+  sema_down(&cur->sema_file2);
 
   /*Argument Passing*/
   init_user_stack(argc, file_argv, &if_);
@@ -154,9 +168,12 @@ process_wait (tid_t child_tid UNUSED)
 {
   struct thread* cur = thread_current();
   
+  if(list_empty(&cur->child_list))
+    return -1;
   //child process가 맞는지 확인
   struct list_elem* e = list_front(&cur->child_list);
   struct thread* child = NULL;
+  
   while(e != list_end(&cur->child_list))
   {
     if(child_tid == list_entry(e, struct thread, child_elem)->tid)
@@ -166,10 +183,12 @@ process_wait (tid_t child_tid UNUSED)
     }
     e = list_next(e);
   }
+
   if(child == NULL) //이거 되나?
     return -1;
 
-  sema_down(&child->sema_wait);
+  //printf("child find: %s\n",child->name);
+  sema_down(&child->sema_wait); //wait child termination
   int status = child->exit_code;
   list_remove(&child->child_elem);
   sema_up(&child->sema_exit);
@@ -182,6 +201,14 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+  /*file denying*/
+  for(int i=2; i < cur->fd_count; i++)
+  {
+    if (cur->fdt[i] != cur->myfile)
+      file_close(cur->fdt[i]);
+  }
+  file_close(cur->myfile);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -199,6 +226,8 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+  sema_up(&cur->sema_wait);
+  sema_down(&cur->sema_exit);
 }
 
 /* Sets up the CPU for running user code in the current
@@ -326,9 +355,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
       printf ("load: %s: error loading executable\n", file_name);
       goto done; 
     }
-  
-  /*Denying Writes*/
-  //file_deny_write(file);
 
   /* Read program headers. */
   file_ofs = ehdr.e_phoff;  //program header table offset
@@ -399,10 +425,15 @@ load (const char *file_name, void (**eip) (void), void **esp)
   success = true;
 
  done:
-  /* We arrive here whether the load is successful or not. */
-  file_close (file);
-  /*Denying writes*/
-  //file_allow_write(file);
+  /*Denying Writes*/
+  if(success)
+  {
+    file_deny_write(file);
+    t->myfile = file;
+  }
+  else
+    file_close (file);
+
   return success;
 }
 

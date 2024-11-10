@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 #include "synch.h"
+#include "filesys/file.h"
 //#define USERPROG
 
 /* States in a thread's life cycle. */
@@ -84,44 +85,50 @@ typedef int tid_t;
    blocked state is on a semaphore wait list. */
 struct thread
   {
-    /* Owned by thread.c. */
-    tid_t tid;                          /* Thread identifier. */
-    enum thread_status status;          /* Thread state. */
-    char name[16];                      /* Name (for debugging purposes). */
-    uint8_t *stack;                     /* Saved stack pointer. */
-    int priority;                       /* Priority. */
-    struct list_elem allelem;           /* List element for all threads list. */
-    
-    /*Alam Clock*/
-    int64_t alarm;
-    
-    /*Priority Scheduling*/  
-    int init_priority;                  /* priority가 바뀔 것을 대비해 초기 priority 저장*/
-    struct lock* request_lock;          /* 현재 이 thread가 acquire한 lock*/
-    struct list donation_list;          /* 이 thread에게 donate해준 thread들 list*/
-    struct list_elem donaelem;          /* donate한 thread의 donation_list에 연결되는 list element*/
+   /* Owned by thread.c. */
+   tid_t tid;                          /* Thread identifier. */
+   enum thread_status status;          /* Thread state. */
+   char name[16];                      /* Name (for debugging purposes). */
+   uint8_t *stack;                     /* Saved stack pointer. */
+   int priority;                       /* Priority. */
+   struct list_elem allelem;           /* List element for all threads list. */
+   
+   /*Alam Clock*/
+   int64_t alarm;
+   
+   /*Priority Scheduling*/  
+   int init_priority;                  /* priority가 바뀔 것을 대비해 초기 priority 저장*/
+   struct lock* request_lock;          /* 현재 이 thread가 acquire한 lock*/
+   struct list donation_list;          /* 이 thread에게 donate해준 thread들 list*/
+   struct list_elem donaelem;          /* donate한 thread의 donation_list에 연결되는 list element*/
 
-    /*Advanced Scheduling*/
-    int nice;
-    int recent_cpu;
-    
-    /* Shared between thread.c and synch.c. */
-    struct list_elem elem;              /* List element. */
+   /*Advanced Scheduling*/
+   int nice;
+   int recent_cpu;
+   
+   /* Shared between thread.c and synch.c. */
+   struct list_elem elem;              /* List element. */
 
 #ifdef USERPROG
-    /* Owned by userprog/process.c. */
-    uint32_t *pagedir;                  /* Page directory. */
+   /* Owned by userprog/process.c. */
+   uint32_t *pagedir;                  /* Page directory. */
 
-    /*system call*/
-    struct list child_list; 
-    struct list_elem child_elem;
-    int exit_code;
-    struct semaphore sema_wait;
-    struct semaphore sema_exit;
+   /*system call*/
+   struct list child_list; 
+   struct list_elem child_elem;
+   int exit_code;
+   struct semaphore sema_wait;
+   struct semaphore sema_exit;
 
-    /*system call-file*/
-    //struct file* fdt[128];
-    //int fd_count;
+   /*system call-file*/
+   struct file* fdt[128];
+   int fd_count;
+
+   /*file system*/
+   bool is_file_valid;
+   struct semaphore sema_file1;
+   struct semaphore sema_file2;
+   struct file* myfile;
 #endif
     
     /* Owned by thread.c. */

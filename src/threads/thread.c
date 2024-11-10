@@ -525,13 +525,17 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init(&t->child_list);
   sema_init(&t->sema_wait, 0);
   sema_init(&t->sema_exit, 0);
+  sema_init(&t->sema_file1, 0);
+  sema_init(&t->sema_file2, 0);
   t->exit_code = -1;
-  //t->fdt[0] = 0;
-  //t->fdt[1] = 1;
-  //t->fd_count = 2;
-  //for (int i = fd_count; i < 128; i++) {
-  //  fdt[i] = NULL;  
-  //}
+  t->is_file_valid = false;
+  t->myfile = NULL;
+  t->fdt[0] = NULL;
+  t->fdt[1] = NULL;
+  t->fd_count = 2;
+  for (int i = t->fd_count; i < 128; i++) {
+   t->fdt[i] = NULL;  
+  }
 #endif
 
   /*advanced scheduling*/

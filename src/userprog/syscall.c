@@ -1,13 +1,6 @@
 #include "userprog/syscall.h"
-#include <stdio.h>
-#include <syscall-nr.h>
-#include "threads/interrupt.h"
-#include "threads/thread.h"
-#include "devices/shutdown.h"
-#include "process.h"
-#include "filesys/filesys.h"
 
-static void syscall_handler (struct intr_frame *);
+static void syscall_handler (struct intr_frame *f UNUSED);
 
 void
 syscall_init (void) 
@@ -19,67 +12,209 @@ static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
   struct thread* cur = thread_current();
-  //print("syscall number:%d\\n",*((uint32_t*)f->esp));
+
+  if (!is_user_stack_addr(f->esp))
+  {
+    sys_exit(cur, -1);
+  }
+
   switch(*((uint32_t*)f->esp)) //syscall number
   {
     case SYS_HALT:
       shutdown_power_off();
+      break;
 
     case SYS_EXIT:
-      cur->exit_code = *((uint32_t*)(f->esp + 4));
-      printf("%s: exit(%d)\n", cur->name, cur->exit_code);
-      sema_up(&cur->sema_wait);
-      sema_down(&cur->sema_exit);
-      thread_exit();
+      if (!is_user_stack_addr (f->esp+4))
+        sys_exit(cur, -1);
+      sys_exit(cur, *((uint32_t*)(f->esp + 4)));
+      break;
 
     case SYS_EXEC:
-      process_execute(*((char**)(f->esp + 4)));
-      return;
+      if (!is_user_stack_addr (f->esp+4))
+        sys_exit(cur, -1);
+      f->eax = process_execute(*((char**)(f->esp + 4)));
+      break;
+
     case SYS_WAIT:
-      process_wait(*((uint32_t*)(f->esp + 4)));
-      return;
+      if (!is_user_stack_addr (f->esp+4))
+        sys_exit(cur, -1);
+      int ret = process_wait(*((uint32_t*)(f->esp + 4)));
+      f->eax = ret;
+      break;
+
     case SYS_CREATE:
-      // return filesys_create(*((char**)(f->esp + 4)), *(f->esp + 8));
+      if (!is_user_stack_addr (f->esp+4) || !is_user_stack_addr (f->esp+8))
+        sys_exit(cur, -1);
+      if ( !is_user_stack_addr (*((char**)(f->esp + 4))) ) //FILE이 valid한가?
+        sys_exit(cur, -1);
+      f->eax = filesys_create(*((char**)(f->esp + 4)), *((uint32_t*)(f->esp + 8)));
       break;
+
     case SYS_REMOVE:
-      // return filesys_remove(*((char**)(f->esp + 4)));
+      if (!is_user_stack_addr(f->esp+4))
+        sys_exit(cur, -1);
+      f->eax = filesys_remove(*((char**)(f->esp + 4)));
       break;
+
     case SYS_OPEN:
-      // struct file* opened = filesys_open(*((char**)(f->esp + 4)));
-      // cur->fdt[fd_count++] = opened;
-      // return fd_count - 1;
+      if (!is_user_stack_addr (f->esp+4))
+        sys_exit(cur, -1);
+      
+      f->eax = sys_open(cur, *((char**)(f->esp + 4)));
       break;
+
     case SYS_FILESIZE:
-      // struct file *file = cur->fdt[*((uint32_t*)(f->esp + 4))];
-      // return file_length(file);
+      if (!is_user_stack_addr (f->esp+4))
+        sys_exit(cur, -1);
+      f->eax = sys_filesize(cur, *((uint32_t*)(f->esp + 4)));
       break;
+
     case SYS_READ:
-      // struct file *file = cur->fdt[*((uint32_t*)(f->esp + 4))];
-      // return file_read(file, *((uint32_t*)(f->esp + 8)), *((uint32_t*)(f->esp + 12)))
+      if (!is_user_stack_addr (f->esp+4) || !is_user_stack_addr (f->esp+8) || !is_user_stack_addr (f->esp+12))
+        sys_exit(cur, -1);
+      f->eax = sys_read(cur, *(uint32_t*)(f->esp + 4), *(void**)(f->esp + 8), *(uint32_t*)(f->esp + 12));
       break;
+
     case SYS_WRITE:
-      // struct file *file = cur->fdt[*((uint32_t*)(f->esp + 4))];
-      // return file_write(file, *((uint32_t*)(f->esp + 8)), *((uint32_t*)(f->esp + 12)))
+      if (!is_user_stack_addr(f->esp+4) || !is_user_stack_addr (f->esp+8) || !is_user_stack_addr(f->esp+12))
+        sys_exit(cur, -1);
+      f->eax = sys_write(cur, *((uint32_t*)(f->esp + 4)), *((void**)(f->esp + 8)), *((uint32_t*)(f->esp + 12)));
       break;
+
     case SYS_SEEK:
-      // struct file *file = cur->fdt[*((uint32_t*)(f->esp + 4))];
-      // return file_seek (file, *((uint32_t*)(f->esp + 8)))
+      if (!is_user_stack_addr(f->esp+4) || !is_user_stack_addr(f->esp+8))
+        sys_exit(cur, -1);
+      sys_seek(cur, *((uint32_t*)(f->esp + 4)), *((uint32_t*)(f->esp + 8)));
       break;
+
     case SYS_TELL:
-      // struct file *file = cur->fdt[*((uint32_t*)(f->esp + 4))];
-      // return file_tell(file)
+      if (!is_user_stack_addr(f->esp+4))
+        sys_exit(cur, -1);
+      f->eax = sys_tell(cur, *((uint32_t*)(f->esp + 4)));
       break;
+
     case SYS_CLOSE:
-      // struct file *file = cur->fdt[*((uint32_t*)(f->esp + 4))];
-      // cur->fdt[*((uint32_t*)(f->esp + 4))] = NULL;
-      // fd_count--;
-      // return file_close(file)
+      if (!is_user_stack_addr (f->esp+4))
+        sys_exit(cur, -1);
+      sys_close(cur, *((uint32_t*)(f->esp + 4)));
       break;
+
     default:
       /*초기 syscall_handler, 아직 다루지 않는 project 3~4의 syscall들은 여기로*/
-      printf ("system call!\n");
+      printf ("undefined system call!\n");
       thread_exit();
       break;
   }
 }
 
+void sys_exit(struct thread* cur, int status){
+  cur->exit_code = status;
+  printf("%s: exit(%d)\n", cur->name, cur->exit_code);
+  thread_exit();
+}
+
+int sys_open(struct thread* cur, const char* f){
+  if (f == NULL)
+    sys_exit(cur, -1);
+  struct file* opened = filesys_open(f);
+  if(opened == NULL)
+    return -1;
+
+  if(cur->fd_count > 127) 
+    sys_exit(cur, -1);
+
+  cur->fdt[cur->fd_count++] = opened;
+
+  return cur->fd_count -1;
+}
+
+int sys_filesize(struct thread* cur, int fd){
+  struct file* found = cur->fdt[fd];
+      if ( found == NULL)
+        sys_exit(cur, -1);
+      return file_length(found);
+}
+
+int sys_read(struct thread* cur, int fd, void *buffer, int size){
+  struct file* found = cur->fdt[fd];
+  if(is_user_stack_addr(found) ||!is_user_stack_addr(buffer) || !is_user_stack_addr(buffer + size))
+    sys_exit(cur, -1);
+  if(fd == 0)
+  {
+    int count;
+    for(count = 0; count <size; count++)
+    {
+      char c = input_getc();
+      *(char*)(buffer + count) = c;
+      if(c == '\0')
+        break;
+    }
+    return count;
+  }
+  else if (fd == 1)
+    sys_exit(cur, -1);
+  else
+  {
+    if (found == NULL)
+      sys_exit(cur, -1);
+
+    return file_read(cur->fdt[fd], buffer, size);
+  }
+  return 0;
+}
+
+int sys_write(struct thread* cur, int fd, const void *buffer, unsigned size){
+  
+  struct file* found = cur->fdt[fd];
+  if(is_user_stack_addr(found) ||!is_user_stack_addr(buffer) || !is_user_stack_addr(buffer + size))
+    sys_exit(cur, -1);
+
+  if (fd == 1) //fd == 1: 콘솔에 직접 write
+  {
+    putbuf (buffer, size);
+    return size;
+  }
+  else if (fd == 0)
+  {
+    sys_exit(cur, -1);
+  }
+  else
+  {
+    if (found == NULL)
+    {
+      sys_exit(cur, -1);
+    }
+    else
+      return file_write(found, buffer, size); //if deny_file_write, return 0
+  }
+  return 0;
+}
+
+void sys_seek(struct thread* cur, int fd, unsigned position){
+    struct file* found = cur->fdt[fd];
+      if (found == NULL)
+        sys_exit(cur, -1);
+    file_seek (found, position);
+}
+
+unsigned sys_tell(struct thread* cur, int fd){
+  struct file* found = cur->fdt[fd];
+  if (found == NULL)
+    sys_exit(cur, -1);
+  return file_tell(found);
+}
+
+void sys_close(struct thread* cur, int fd){
+  struct file *close = cur->fdt[fd];
+  if (close == NULL)
+    sys_exit(cur, -1);
+  cur->fdt[fd] = NULL;
+  cur->fd_count--;
+  file_close(close);    
+}
+
+bool is_user_stack_addr(const void* vaddr)
+{
+  return PHYS_BASE > vaddr &&  (void*)(1 << 27) <= vaddr;
+}
