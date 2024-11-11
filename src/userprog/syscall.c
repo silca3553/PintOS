@@ -47,7 +47,7 @@ syscall_handler (struct intr_frame *f UNUSED)
     case SYS_CREATE:
       if (!is_user_stack_addr (f->esp+4) || !is_user_stack_addr (f->esp+8))
         sys_exit(cur, -1);
-      if ( !is_user_stack_addr (*((char**)(f->esp + 4))) ) //FILE이 valid한가?
+      if (*((char**)(f->esp + 4)) == NULL)
         sys_exit(cur, -1);
       f->eax = filesys_create(*((char**)(f->esp + 4)), *((uint32_t*)(f->esp + 8)));
       break;
@@ -151,7 +151,7 @@ int sys_filesize(struct thread* cur, int fd){
 
 int sys_read(struct thread* cur, int fd, void *buffer, int size){
   struct file* found = cur->fdt[fd];
-  if(is_user_stack_addr(found) ||!is_user_stack_addr(buffer) || !is_user_stack_addr(buffer + size))
+  if(!is_user_stack_addr(buffer) || !is_user_stack_addr(buffer + size))
     sys_exit(cur, -1);
   if(fd == 0)
   {
@@ -181,7 +181,7 @@ int sys_read(struct thread* cur, int fd, void *buffer, int size){
 int sys_write(struct thread* cur, int fd, const void *buffer, unsigned size){
   
   struct file* found = cur->fdt[fd];
-  if(is_user_stack_addr(found) ||!is_user_stack_addr(buffer) || !is_user_stack_addr(buffer + size))
+  if(!is_user_stack_addr(buffer) || !is_user_stack_addr(buffer + size))
     sys_exit(cur, -1);
 
   if (fd == 1) //fd == 1: 콘솔에 직접 write
@@ -233,5 +233,5 @@ void sys_close(struct thread* cur, int fd){
 
 bool is_user_stack_addr(const void* vaddr)
 {
-  return PHYS_BASE > vaddr &&  (void*)(1 << 27) <= vaddr;
+  return PHYS_BASE > vaddr;
 }
