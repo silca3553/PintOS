@@ -5,6 +5,7 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/synch.h"
 #include "devices/shutdown.h"
 #include "devices/input.h"
 #include "process.h"

@@ -1,11 +1,13 @@
 #include "userprog/syscall.h"
 
 static void syscall_handler (struct intr_frame *f UNUSED);
+struct lock filesys_lock;
 
 void
 syscall_init (void) 
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+  lock_init(&filesys_lock);
 }
 
 static void
@@ -117,7 +119,11 @@ void sys_exit(struct thread* cur, int status){
 int sys_open(struct thread* cur, const char* f){
   if (f == NULL)
     sys_exit(cur, -1);
+
+  lock_acquire(&filesys_lock);
   struct file* opened = filesys_open(f);
+  lock_release(&filesys_lock);
+
   if(opened == NULL)
     return -1;
 
