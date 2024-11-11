@@ -1,7 +1,6 @@
 #include "userprog/syscall.h"
 
 static void syscall_handler (struct intr_frame *f UNUSED);
-struct lock filesys_lock;
 
 void
 syscall_init (void) 
@@ -130,9 +129,17 @@ int sys_open(struct thread* cur, const char* f){
   if(cur->fd_count > 127) 
     sys_exit(cur, -1);
 
-  cur->fdt[cur->fd_count++] = opened;
-
-  return cur->fd_count -1;
+  for (int i = 2; i < 128; i++)
+  {
+    if (cur->fdt[i] == NULL)
+    {
+      cur->fdt[i] = opened;
+      cur->fd_count++;
+      return i;
+    }
+  }
+  sys_exit(cur, -1);
+  return -1;
 }
 
 int sys_filesize(struct thread* cur, int fd){
@@ -165,9 +172,7 @@ int sys_read(struct thread* cur, int fd, void *buffer, int size){
     if (found == NULL)
       sys_exit(cur, -1);
     
-    lock_acquire(&filesys_lock);
     off_t result =  file_read(cur->fdt[fd], buffer, size);
-    lock_release(&filesys_lock);
     return result;
   }
   return 0;
@@ -196,9 +201,7 @@ int sys_write(struct thread* cur, int fd, const void *buffer, unsigned size){
     }
     else
     {
-      lock_acquire(&filesys_lock);
       off_t result = file_write(found, buffer, size); //if deny_file_write, return 0
-      lock_release(&filesys_lock);
       return result;
     }
   }

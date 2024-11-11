@@ -25,4 +25,6 @@ unsigned sys_tell(struct thread* cur, int fd);
 void sys_close(struct thread* cur, int fd);
 bool is_user_stack_addr(const void* vaddr);
 
+struct lock filesys_lock;
+
 #endif /* userprog/syscall.h */
