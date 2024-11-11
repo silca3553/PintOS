@@ -164,8 +164,11 @@ int sys_read(struct thread* cur, int fd, void *buffer, int size){
   {
     if (found == NULL)
       sys_exit(cur, -1);
-
-    return file_read(cur->fdt[fd], buffer, size);
+    
+    lock_acquire(&filesys_lock);
+    off_t result =  file_read(cur->fdt[fd], buffer, size);
+    lock_release(&filesys_lock);
+    return result;
   }
   return 0;
 }
@@ -192,7 +195,12 @@ int sys_write(struct thread* cur, int fd, const void *buffer, unsigned size){
       sys_exit(cur, -1);
     }
     else
-      return file_write(found, buffer, size); //if deny_file_write, return 0
+    {
+      lock_acquire(&filesys_lock);
+      off_t result = file_write(found, buffer, size); //if deny_file_write, return 0
+      lock_release(&filesys_lock);
+      return result;
+    }
   }
   return 0;
 }
