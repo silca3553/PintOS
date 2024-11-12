@@ -530,10 +530,8 @@ init_thread (struct thread *t, const char *name, int priority)
   t->exit_code = -1;
   t->is_file_valid = false;
   t->myfile = NULL;
-  t->fdt[0] = NULL;
-  t->fdt[1] = NULL;
   t->fd_count = 2;
-  for (int i = t->fd_count; i < 128; i++) {
+  for (int i = 0; i < 128; i++) {
    t->fdt[i] = NULL;  
   }
 #endif

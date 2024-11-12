@@ -48,12 +48,14 @@ process_execute (const char *file_name)
     return -1;
   }
   
+  /*system call - file*/
   struct thread* child = get_thread_with_tid(tid);
   sema_down(&child->sema_file1);
   if(!child->is_file_valid)
     return -1;
-    
   sema_up(&child->sema_file2);
+
+  /*system call - process*/
   list_push_back(&thread_current()->child_list, &child->child_elem);
   //printf("execute %s in %s\n",thread_current()->name,child->name);
   return tid;
@@ -93,6 +95,7 @@ start_process (void *file_name_)
 
   success = load (file_name, &if_.eip, &if_.esp);
 
+  /*system call - file*/
   cur->is_file_valid = success;
   sema_up(&cur->sema_file1);
   sema_down(&cur->sema_file2);
@@ -168,9 +171,10 @@ int
 process_wait (tid_t child_tid UNUSED) 
 {
   struct thread* cur = thread_current();
-  
+  /*system call - process*/
   if(list_empty(&cur->child_list))
-    return -1;
+    return -1; 
+    
   //child process가 맞는지 확인
   struct list_elem* e = list_front(&cur->child_list);
   struct thread* child = NULL;
@@ -185,7 +189,7 @@ process_wait (tid_t child_tid UNUSED)
     e = list_next(e);
   }
 
-  if(child == NULL) //이거 되나?
+  if(child == NULL)
     return -1;
 
   //printf("child find: %s\n",child->name);
@@ -206,7 +210,7 @@ process_exit (void)
   /*file denying*/
   for(int i=2; i < cur->fd_count; i++)
   {
-    if (cur->fdt[i] != cur->myfile)
+    if (cur->fdt[i] != cur->myfile && !(cur->fdt[i] == NULL))
       file_close(cur->fdt[i]);
   }
   file_close(cur->myfile);
