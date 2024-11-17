@@ -53,6 +53,7 @@ process_execute (const char *file_name)
   sema_down(&child->sema_file1);
   if(!child->is_file_valid)
     return -1;
+    
   sema_up(&child->sema_file2);
 
   /*system call - process*/
@@ -214,6 +215,10 @@ process_exit (void)
       file_close(cur->fdt[i]);
   }
   file_close(cur->myfile);
+
+  //terminate child process.
+  while(!list_empty(&cur->child_list))
+    sema_up(&list_entry(list_pop_back(&cur->child_list), struct thread, child_elem)->sema_exit);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
