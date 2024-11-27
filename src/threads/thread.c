@@ -16,6 +16,9 @@
 #include "userprog/process.h"
 #endif
 
+/*VM*/
+#include "vm/spage.h"
+
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
    of thread.h for details. */
@@ -107,6 +110,7 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -801,6 +805,10 @@ struct thread* get_thread_with_tid(tid_t tid)
     }
     e = list_next(e);
   }
+  if(t==NULL)
+    PANIC("error : get_thread_with_tid()");
   return t;
 }
 #endif
+
+

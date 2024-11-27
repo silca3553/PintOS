@@ -20,6 +20,10 @@
 #include "threads/vaddr.h"
 #include "threads/synch.h"
 
+//vm
+#include "vm/spage.h"
+#include "lib/kernel/hash.h"
+
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
@@ -47,13 +51,14 @@ process_execute (const char *file_name)
     palloc_free_page (fn_copy);
     return -1;
   }
-  
   /*system call - file*/
   struct thread* child = get_thread_with_tid(tid);
   sema_down(&child->sema_file1);
   if(!child->is_file_valid)
+  {
+    //printf("!!\n");
     return -1;
-    
+  }  
   sema_up(&child->sema_file2);
 
   /*system call - process*/
@@ -220,6 +225,9 @@ process_exit (void)
   while(!list_empty(&cur->child_list))
     sema_up(&list_entry(list_pop_back(&cur->child_list), struct thread, child_elem)->sema_exit);
 
+  //vm
+  remove_relevant_frame_entries(cur);
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -341,8 +349,15 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
+
+  /*VM*/
+  t->spt = spt_create();
+
   if (t->pagedir == NULL)
+  {
+    //printf("load: pagedir_create fail\n");
     goto done;
+  }
   process_activate (); //set tss, %cr3=pd
 
   /* Open executable file. */
@@ -430,8 +445,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   /* Set up stack. */
   if (!setup_stack (esp))
+  {
+    //printf("setup_stack_fail\n");
     goto done;
-
+  }
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
 
@@ -445,14 +462,15 @@ load (const char *file_name, void (**eip) (void), void **esp)
     t->myfile = file;
   }
   else
+  {
+    //printf("load success faild\n");
     file_close (file);
+  }
 
   return success;
 }
 
 /* load() helpers. */
-
-static bool install_page (void *upage, void *kpage, bool writable);
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
@@ -521,8 +539,12 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
 
-  file_seek (file, ofs);
-  while (read_bytes > 0 || zero_bytes > 0) 
+  struct hash* spt= thread_current()->spt;
+
+  //VM
+  off_t offset = ofs;
+  //file_seek (file, ofs);
+  while (read_bytes > 0 || zero_bytes > 0)
     {
       /* Calculate how to fill this page.
          We will read PAGE_READ_BYTES bytes from FILE
@@ -530,26 +552,34 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
-      if (kpage == NULL)
-        return false;
+      // /* Get a page of memory. */
+      // uint8_t *kpage = alloc_get_frame(upage,0);
 
-      /* Load this page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
+      // if (kpage == NULL)
+      // {
+      //   //printf("load segment : alloc_get_frame failed\n");
+      //   return false;
+      // }
+      // /* Load this page. */
+      //if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
+      //   {
+      //     palloc_free_page (kpage);
+      //     return false; 
+      //   }
+      // memset (kpage + page_read_bytes, 0, page_zero_bytes);
 
-      /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable)) 
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }
+      // /* Add the page to the process's address space. */
+      // if (!install_page (upage, kpage, writable)) 
+      //   {
+      //     palloc_free_page (kpage);
+      //     return false; 
+      //   }
 
+      /* VM */
+      if(!spt_insert_file(spt, upage, file, offset, page_read_bytes, page_zero_bytes, writable))
+        return 0;
+      offset += page_read_bytes;
+      
       /* Advance. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
@@ -565,11 +595,11 @@ setup_stack (void **esp)
 {
   uint8_t *kpage;
   bool success = false;
-
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  void * upage = ((uint8_t *) PHYS_BASE) - PGSIZE;
+  kpage = alloc_get_frame(upage, PAL_ZERO);
   if (kpage != NULL)
     {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+      success = install_page (upage, kpage, true);
       if (success)
         *esp = PHYS_BASE;
       else
@@ -587,7 +617,7 @@ setup_stack (void **esp)
    with palloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
-static bool
+bool
 install_page (void *upage, void *kpage, bool writable) //user vm을 실제로 데이터가 저장된 kpage(kerenl vm)이 가리키는 실제 PA와 mapping 한다.
 {
   struct thread *t = thread_current ();

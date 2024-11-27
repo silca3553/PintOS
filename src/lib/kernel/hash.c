@@ -31,9 +31,8 @@ hash_init (struct hash *h,
   h->hash = hash;
   h->less = less;
   h->aux = aux;
-
   if (h->buckets != NULL) 
-    {
+    { 
       hash_clear (h, NULL);
       return true;
     }
@@ -100,12 +99,9 @@ hash_insert (struct hash *h, struct hash_elem *new)
 {
   struct list *bucket = find_bucket (h, new);
   struct hash_elem *old = find_elem (h, bucket, new);
-
   if (old == NULL) 
     insert_elem (h, bucket, new);
-
   rehash (h);
-
   return old; 
 }
 
@@ -305,6 +301,8 @@ hash_int (int i)
 static struct list *
 find_bucket (struct hash *h, struct hash_elem *e) 
 {
+  //printf("%p\n",e);
+  //printf("%d\n",h->hash (e, h->aux));
   size_t bucket_idx = h->hash (e, h->aux) & (h->bucket_cnt - 1);
   return &h->buckets[bucket_idx];
 }
@@ -315,7 +313,6 @@ static struct hash_elem *
 find_elem (struct hash *h, struct list *bucket, struct hash_elem *e) 
 {
   struct list_elem *i;
-
   for (i = list_begin (bucket); i != list_end (bucket); i = list_next (i)) 
     {
       struct hash_elem *hi = list_elem_to_hash_elem (i);

@@ -6,6 +6,14 @@
 #include "threads/thread.h"
 #include "userprog/syscall.h"
 
+/*VM*/
+#include "lib/kernel/hash.h"
+#include "vm/frame.h"
+#include "vm/spage.h"
+#include "threads/palloc.h"
+#include "userprog/process.h"
+#define MAX_STACK 0x800000 //8MB
+
 /* Number of page faults processed. */
 static long long page_fault_cnt;
 
@@ -59,6 +67,7 @@ exception_init (void)
      We need to disable interrupts for page faults because the
      fault address is stored in CR2 and needs to be preserved. */
   intr_register_int (14, 0, INTR_OFF, page_fault, "#PF Page-Fault Exception");
+
 }
 
 /* Prints exception statistics. */
@@ -148,9 +157,41 @@ page_fault (struct intr_frame *f)
   not_present = (f->error_code & PF_P) == 0;
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
+  
+  if(not_present)
+  {
+   //check is stack growth
+   bool is_stack_growth = false;
+   void* esp = f->esp;
+   uint32_t size = esp - fault_addr;
+   
+   if(fault_addr <= PHYS_BASE && fault_addr >= PHYS_BASE - MAX_STACK && fault_addr != NULL && (size == 4 || size == 32))
+      is_stack_growth = true;
 
+   void* upage = pg_round_down(fault_addr); //page address
+   
+   if(is_stack_growth)
+   {  
+      void* kaddr = alloc_get_frame(upage, PAL_ZERO); //frame allocate
+      if(kaddr == NULL)
+         sys_exit(thread_current(), -1);
+      install_page(upage, kaddr, true); //page-frame mapping
+      return;
+   }
+
+   struct spte* e = spt_find(thread_current()->spt, upage);
+   if(e == NULL)
+      sys_exit(thread_current(), -1);
+   else
+   {
+      if(!spt_load(e))
+         sys_exit(thread_current(), -1);
+   }
+   return;
+  }
+  
   sys_exit(thread_current(), -1);
-
+  
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */

@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "synch.h"
 #include "filesys/file.h"
+#include "lib/kernel/hash.h"
 //#define USERPROG
 
 /* States in a thread's life cycle. */
@@ -131,8 +132,11 @@ struct thread
    struct file* myfile;
 #endif
     
-    /* Owned by thread.c. */
-    unsigned magic;                     /* Detects stack overflow. */
+   /*VM*/
+   struct hash* spt;
+
+   /* Owned by thread.c. */
+   unsigned magic;                     /* Detects stack overflow. */
   };
 
 /* If false (default), use round-robin scheduler.
@@ -233,5 +237,6 @@ inline int fp_int_divide(int x, int n){
 #ifdef USERPROG
 struct thread* get_thread_with_tid(tid_t tid);
 #endif
+
 
 #endif /* threads/thread.h */

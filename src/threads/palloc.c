@@ -165,8 +165,8 @@ init_pool (struct pool *p, void *base, size_t page_cnt, const char *name)
 
   /* Initialize the pool. */
   lock_init (&p->lock);
-  p->used_map = bitmap_create_in_buf (page_cnt, base, bm_pages * PGSIZE);
-  p->base = base + bm_pages * PGSIZE;
+  p->used_map = bitmap_create_in_buf (page_cnt, base, bm_pages * PGSIZE); //전부 0로 초기화된 bitmap 생성해서 pool에 넣어준다. bit 개수는 page 개수임
+  p->base = base + bm_pages * PGSIZE; //page들의 시작점.bitmap 저장 위치 다음부터
 }
 
 /* Returns true if PAGE was allocated from POOL,
