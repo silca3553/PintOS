@@ -555,6 +555,9 @@ init_thread (struct thread *t, const char *name, int priority)
     }
   }
 
+  /*vm*/
+  list_init(&t->mmap_table);
+
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();

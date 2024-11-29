@@ -39,6 +39,7 @@
 #endif
 /*VM*/
 #include "vm/frame.h"
+#include "vm/swap.h"
 
 /* Page directory with kernel mappings only. */
 uint32_t *init_page_dir;
@@ -131,6 +132,7 @@ main (void)
 
   /* Project3 VM*/
   init_frame_table();
+  swap_init();
 
   printf ("Boot complete.\n");
   

@@ -10,6 +10,7 @@
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 #include "vm/frame.h"
+#include "vm/swap.h"
 
 
 enum page_type
@@ -40,14 +41,17 @@ struct hash* spt_create(void);
 struct spte* spt_find(struct hash *spt, void *uaddr);
 
 bool spt_load(struct spte *e);
-bool spt_load_file(struct spte* e);
-bool spt_load_zero(struct spte* e);
+void* spt_load_file(struct spte* e);
+void* spt_load_zero(struct spte* e);
+void* spt_load_swap(struct spte* e);
 
 //mmap, lazy loading 시 page들을 entry로 만들어 spt에 넣기 함수
 bool spt_insert_file(struct hash* spt, void* uaddr, struct file *file, off_t offset, size_t read_bytes, size_t zero_bytes, bool writable);
-
+bool spt_insert_swap(struct hash* spt, void* uaddr, uint32_t swap_index);
+bool spt_insert_zero(struct hash* spt, void* uaddr);
 //+swap 시 entry로 만들어 spt에 넣기 함수
 //address 넣으면 그에 해당하는 spte 찾아서 리턴하는 함수
-//
+
+bool spt_munmap(struct hash* spt, void* uaddr);
 
 #endif

@@ -160,12 +160,15 @@ page_fault (struct intr_frame *f)
   
   if(not_present)
   {
+
+   if(!is_user_stack_addr(fault_addr))
+      sys_exit(thread_current(), -1);
+
    //check is stack growth
    bool is_stack_growth = false;
-   void* esp = f->esp;
-   uint32_t size = esp - fault_addr;
+   void* esp = is_user_stack_addr(f->esp) ? f->esp : thread_current()->esp;
    
-   if(fault_addr <= PHYS_BASE && fault_addr >= PHYS_BASE - MAX_STACK && fault_addr != NULL && (size == 4 || size == 32))
+   if(fault_addr <= PHYS_BASE && fault_addr >= PHYS_BASE - MAX_STACK && fault_addr != NULL && esp -32 <= fault_addr)
       is_stack_growth = true;
 
    void* upage = pg_round_down(fault_addr); //page address
@@ -182,6 +185,7 @@ page_fault (struct intr_frame *f)
    struct spte* e = spt_find(thread_current()->spt, upage);
    if(e == NULL)
       sys_exit(thread_current(), -1);
+
    else
    {
       if(!spt_load(e))

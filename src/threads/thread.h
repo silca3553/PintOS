@@ -134,11 +134,21 @@ struct thread
     
    /*VM*/
    struct hash* spt;
+   void* esp;
+   struct list mmap_table;
 
    /* Owned by thread.c. */
    unsigned magic;                     /* Detects stack overflow. */
   };
 
+/*vm*/
+struct mmap_entry
+{
+   int mapid;
+   struct file* f;
+   void* uaddr;
+   struct list_elem mmap_elem;
+}
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */

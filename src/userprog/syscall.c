@@ -19,6 +19,8 @@ syscall_handler (struct intr_frame *f UNUSED)
     sys_exit(cur, -1);
   }
 
+  cur->esp = f->esp;
+
   switch(*((uint32_t*)f->esp)) //syscall number
   {
     case SYS_HALT:
@@ -100,6 +102,18 @@ syscall_handler (struct intr_frame *f UNUSED)
         sys_exit(cur, -1);
       sys_close(cur, *((uint32_t*)(f->esp + 4)));
       break;
+    
+    case SYS_MMAP:
+      // if (!is_user_stack_addr(f->esp+4) || !is_user_stack_addr(f->esp+8))
+      //   sys_exit(cur, -1);
+      
+      // f->eax = sys_mmap(cur, *((uint32_t*)(f->esp + 4)), *((uint32_t*)(f->esp + 8)));
+      break;
+    case SYS_MUNMAP:
+      // if (!is_user_stack_addr (f->esp+4))
+      //   sys_exit(cur, -1);
+      // sys_munmap(cur, *((uint32_t*)(f->esp + 4)));
+      break;
 
     default:
       /*초기 syscall_handler, 아직 다루지 않는 project 3~4의 syscall들은 여기로*/
@@ -171,8 +185,9 @@ int sys_read(struct thread* cur, int fd, void *buffer, int size){
   {
     if (found == NULL)
       sys_exit(cur, -1);
-    
+    frame_load_pin(cur, buffer, size);
     off_t result =  file_read(cur->fdt[fd], buffer, size);
+    frame_unpin(cur, buffer, size);
     return result;
   }
   return 0;
@@ -201,7 +216,9 @@ int sys_write(struct thread* cur, int fd, const void *buffer, unsigned size){
     }
     else
     {
+      frame_load_pin(cur, buffer, size);
       off_t result = file_write(found, buffer, size); //if deny_file_write, return 0
+      frame_unpin(cur, buffer, size);
       return result;
     }
   }
@@ -233,5 +250,83 @@ void sys_close(struct thread* cur, int fd){
 
 bool is_user_stack_addr(const void* vaddr)
 {
-  return PHYS_BASE > vaddr;
+  return PHYS_BASE > vaddr && vaddr > 0;
+}
+
+int sys_mmap(struct thread* cur, int fd, void* uaddr)
+{
+  if(fd == 0 || fd == 1 || cur->fdt[fd] == NULL)
+    sys_exit(cur, -1);
+  if((uint32_t)uaddr % PGSIZE != 0)
+    sys_exit(cur, -1);
+  struct file* f = NULL;
+  off_t file_size = file_length(cur->fdt[fd]);
+  if(file_size == 0 || uaddr > PHYS_BASE - 0x800000)
+    sys_exit(cur, -1);
+
+  f = file_reopen(cur->fdt[fd]);
+
+  off_t offset = 0;
+  while(offset < file_size)
+  {
+    if (spt_find(cur->spt, uaddr + offset) != NULL)
+      sys_exit(cur, -1);
+    size_t read_bytes = (offset + PGSIZE < file_size ? PGSIZE : file_size - offset);
+    size_t zero_bytes = PGSIZE - read_bytes;
+    spt_insert_file(cur->spt, uaddr, f, offset, read_bytes, zero_bytes, true);
+    offset = offset + file_size;
+  }
+  struct mmap_entry* e;
+  e->f = f;
+  e->uaddr = uaddr;
+  e->mapid = list_size(&cur->mmap_table);
+  list_push_back(&cur->mmap_table, &e->mmap_elem);
+  return e->mapid;
+}
+
+void sys_munmap(struct thread* cur, int mapid)
+{
+  struct list_elem *e = list_begin(&cur->mmap_table);
+  while(e != list_end(&cur->mmap_table))
+  {
+    struct mmap_entry* entry = list_entry(e, struct mmap_entry, mmap_elem);
+    if(entry->mapid == mapid)
+    {
+      off_t offset = 0;
+      off_t file_size = file_length(entry->f);
+      void* uaddr = entry->uaddr;
+      while(offset < file_size)
+      {
+        spt_munmap(cur->spt, uaddr+offset);
+        offset = offset + file_size;
+      }
+      list_remove(&entry->mmap_elem);
+      file_close(entry->f);
+      break;
+    }
+    e = list_next(e);
+  }
+}
+
+
+/*vm pin*/
+void frame_load_pin(struct thread* cur, const void* buffer, unsigned size)
+{
+  for(void *uaddr=pg_round_down(buffer); uaddr < buffer + size; uaddr += PGSIZE)
+  {
+    struct spte temp;
+    temp.uaddr = uaddr;
+    struct hash_elem* elem = hash_find(cur->spt, &temp.spt_elem);
+    struct spte* spte = hash_entry(elem, struct spte, spt_elem);
+    spt_load(spte);
+    frame_pin(uaddr, true);
+  }
+}
+
+void frame_unpin(struct thread* cur, const void* buffer, unsigned size)
+{
+  for(void *uaddr=pg_round_down(buffer); uaddr < buffer + size; uaddr += PGSIZE)
+  {
+    frame_pin(uaddr, false);
+  }
 }
