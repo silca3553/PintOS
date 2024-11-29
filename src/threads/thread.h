@@ -148,7 +148,7 @@ struct mmap_entry
    struct file* f;
    void* uaddr;
    struct list_elem mmap_elem;
-}
+};
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */

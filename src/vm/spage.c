@@ -166,5 +166,6 @@ bool spt_munmap(struct hash* spt, void* uaddr)
     if(spte == NULL)
         return false;
     hash_delete(spt, elem);
+    return true;
     //할당 해제하는 거 필요
 }

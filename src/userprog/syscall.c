@@ -104,15 +104,15 @@ syscall_handler (struct intr_frame *f UNUSED)
       break;
     
     case SYS_MMAP:
-      // if (!is_user_stack_addr(f->esp+4) || !is_user_stack_addr(f->esp+8))
-      //   sys_exit(cur, -1);
-      
-      // f->eax = sys_mmap(cur, *((uint32_t*)(f->esp + 4)), *((uint32_t*)(f->esp + 8)));
+      if (!is_user_stack_addr(f->esp+4) || !is_user_stack_addr(f->esp+8))
+        sys_exit(cur, -1);
+      f->eax = sys_mmap(cur, *((uint32_t*)(f->esp + 4)), *((void**)(f->esp + 8)));
       break;
+    
     case SYS_MUNMAP:
-      // if (!is_user_stack_addr (f->esp+4))
-      //   sys_exit(cur, -1);
-      // sys_munmap(cur, *((uint32_t*)(f->esp + 4)));
+      if (!is_user_stack_addr (f->esp+4))
+        sys_exit(cur, -1);
+      sys_munmap(cur, *((uint32_t*)(f->esp + 4)));
       break;
 
     default:
@@ -185,9 +185,9 @@ int sys_read(struct thread* cur, int fd, void *buffer, int size){
   {
     if (found == NULL)
       sys_exit(cur, -1);
-    frame_load_pin(cur, buffer, size);
+    //frame_load_pin(cur, buffer, size);
     off_t result =  file_read(cur->fdt[fd], buffer, size);
-    frame_unpin(cur, buffer, size);
+    //frame_unpin(cur, buffer, size);
     return result;
   }
   return 0;
@@ -216,9 +216,9 @@ int sys_write(struct thread* cur, int fd, const void *buffer, unsigned size){
     }
     else
     {
-      frame_load_pin(cur, buffer, size);
+      //frame_load_pin(cur, buffer, size);
       off_t result = file_write(found, buffer, size); //if deny_file_write, return 0
-      frame_unpin(cur, buffer, size);
+      //frame_unpin(cur, buffer, size);
       return result;
     }
   }
@@ -255,41 +255,50 @@ bool is_user_stack_addr(const void* vaddr)
 
 int sys_mmap(struct thread* cur, int fd, void* uaddr)
 {
-  if(fd == 0 || fd == 1 || cur->fdt[fd] == NULL)
-    sys_exit(cur, -1);
-  if((uint32_t)uaddr % PGSIZE != 0)
-    sys_exit(cur, -1);
-  struct file* f = NULL;
-  off_t file_size = file_length(cur->fdt[fd]);
-  if(file_size == 0 || uaddr > PHYS_BASE - 0x800000)
-    sys_exit(cur, -1);
+  if(fd == 0 || fd == 1 || cur->fdt[fd] == NULL 
+  || pg_ofs(uaddr) != 0 || uaddr > PHYS_BASE - 0x800000)
+    return -1;
 
-  f = file_reopen(cur->fdt[fd]);
-
+  lock_acquire(&filesys_lock);
+  struct file* f = file_reopen(cur->fdt[fd]);
+  off_t file_size = file_length(f);
+  if(file_size == 0 || uaddr + file_size)
+  {
+    file_close(f);
+    lock_release(&filesys_lock);
+    return -1;
+  }
   off_t offset = 0;
   while(offset < file_size)
   {
     if (spt_find(cur->spt, uaddr + offset) != NULL)
-      sys_exit(cur, -1);
+    {
+      file_close(f);
+      lock_release(&filesys_lock);
+      return -1;
+    }
     size_t read_bytes = (offset + PGSIZE < file_size ? PGSIZE : file_size - offset);
     size_t zero_bytes = PGSIZE - read_bytes;
     spt_insert_file(cur->spt, uaddr, f, offset, read_bytes, zero_bytes, true);
-    offset = offset + file_size;
+    offset = offset + PGSIZE;
   }
-  struct mmap_entry* e;
+  struct mmap_entry* e = (struct mmap_entry *)malloc(sizeof(struct mmap_entry));
   e->f = f;
   e->uaddr = uaddr;
   e->mapid = list_size(&cur->mmap_table);
   list_push_back(&cur->mmap_table, &e->mmap_elem);
+  lock_release(&filesys_lock);
   return e->mapid;
 }
 
 void sys_munmap(struct thread* cur, int mapid)
 {
   struct list_elem *e = list_begin(&cur->mmap_table);
+  lock_acquire(&filesys_lock);
   while(e != list_end(&cur->mmap_table))
   {
     struct mmap_entry* entry = list_entry(e, struct mmap_entry, mmap_elem);
+    e = list_next(e);
     if(entry->mapid == mapid)
     {
       off_t offset = 0;
@@ -298,13 +307,14 @@ void sys_munmap(struct thread* cur, int mapid)
       while(offset < file_size)
       {
         spt_munmap(cur->spt, uaddr+offset);
-        offset = offset + file_size;
+        offset = offset + PGSIZE;
       }
       list_remove(&entry->mmap_elem);
+      free(entry);
       file_close(entry->f);
+      lock_release(&filesys_lock);
       break;
-    }
-    e = list_next(e);
+    } 
   }
 }
 

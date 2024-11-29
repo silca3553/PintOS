@@ -27,7 +27,7 @@ unsigned sys_tell(struct thread* cur, int fd);
 void sys_close(struct thread* cur, int fd);
 bool is_user_stack_addr(const void* vaddr);
 int sys_mmap(struct thread* cur, int fd, void* uaddr);
-//void sys_munmap(struct thead* cur, int mapid);
+void sys_munmap(struct thread* cur, int mapid);
 void frame_load_pin(struct thread* cur, const void* buffer, unsigned size);
 void frame_unpin(struct thread* cur, const void* buffer, unsigned size);
 struct lock filesys_lock;
