@@ -157,7 +157,7 @@ bool spt_insert_zero(struct hash* spt, void* uaddr)
     return false;
 }
 
-bool spt_munmap(struct hash* spt, void* uaddr)
+bool spt_munmap(uint32_t *pagedir, struct hash* spt, void* uaddr, size_t write_bytes, off_t offset)
 {
     struct spte temp;
     temp.uaddr = uaddr;
@@ -165,8 +165,12 @@ bool spt_munmap(struct hash* spt, void* uaddr)
     struct spte* spte = hash_entry(elem, struct spte, spt_elem);
     if(spte == NULL)
     {
-        printf("BBONG!\n");
         return false;
+    }
+    bool is_dirty = pagedir_is_dirty(pagedir, uaddr);
+    if(is_dirty)
+    {
+        file_write_at(spte->file, uaddr, write_bytes, offset);
     }
     hash_delete(spt, elem);
     free(spte);

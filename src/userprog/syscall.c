@@ -306,12 +306,13 @@ void sys_munmap(struct thread* cur, int mapid)
       void* uaddr = entry->uaddr;
       while(offset < file_size)
       {
-        spt_munmap(cur->spt, uaddr+offset);
+        size_t write_bytes = (offset + PGSIZE < file_size ? PGSIZE : file_size - offset);
+        spt_munmap(cur->pagedir, cur->spt, uaddr+offset, write_bytes, offset);
         offset = offset + PGSIZE;
       }
       list_remove(&entry->mmap_elem);
-      free(entry);
       file_close(entry->f);
+      free(entry);
       lock_release(&filesys_lock);
       break;
     } 

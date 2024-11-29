@@ -52,6 +52,6 @@ bool spt_insert_zero(struct hash* spt, void* uaddr);
 //+swap 시 entry로 만들어 spt에 넣기 함수
 //address 넣으면 그에 해당하는 spte 찾아서 리턴하는 함수
 
-bool spt_munmap(struct hash* spt, void* uaddr);
+bool spt_munmap(uint32_t *pagedir, struct hash* spt, void* uaddr, size_t write_bytes, off_t offset);
 
 #endif
