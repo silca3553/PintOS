@@ -255,14 +255,14 @@ bool is_user_stack_addr(const void* vaddr)
 
 int sys_mmap(struct thread* cur, int fd, void* uaddr)
 {
-  if(fd == 0 || fd == 1 || cur->fdt[fd] == NULL 
+  if(fd == 0 || fd == 1 || uaddr == NULL || cur->fdt[fd] == NULL 
   || pg_ofs(uaddr) != 0 || uaddr > PHYS_BASE - 0x800000)
     return -1;
 
   lock_acquire(&filesys_lock);
   struct file* f = file_reopen(cur->fdt[fd]);
   off_t file_size = file_length(f);
-  if(file_size == 0 || uaddr + file_size)
+  if(file_size == 0)
   {
     file_close(f);
     lock_release(&filesys_lock);
@@ -279,7 +279,7 @@ int sys_mmap(struct thread* cur, int fd, void* uaddr)
     }
     size_t read_bytes = (offset + PGSIZE < file_size ? PGSIZE : file_size - offset);
     size_t zero_bytes = PGSIZE - read_bytes;
-    spt_insert_file(cur->spt, uaddr, f, offset, read_bytes, zero_bytes, true);
+    spt_insert_file(cur->spt, uaddr+offset, f, offset, read_bytes, zero_bytes, true);
     offset = offset + PGSIZE;
   }
   struct mmap_entry* e = (struct mmap_entry *)malloc(sizeof(struct mmap_entry));
@@ -293,8 +293,8 @@ int sys_mmap(struct thread* cur, int fd, void* uaddr)
 
 void sys_munmap(struct thread* cur, int mapid)
 {
-  struct list_elem *e = list_begin(&cur->mmap_table);
   lock_acquire(&filesys_lock);
+  struct list_elem *e = list_begin(&cur->mmap_table);
   while(e != list_end(&cur->mmap_table))
   {
     struct mmap_entry* entry = list_entry(e, struct mmap_entry, mmap_elem);

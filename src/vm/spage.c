@@ -164,8 +164,12 @@ bool spt_munmap(struct hash* spt, void* uaddr)
     struct hash_elem* elem = hash_find(spt, &temp.spt_elem);
     struct spte* spte = hash_entry(elem, struct spte, spt_elem);
     if(spte == NULL)
+    {
+        printf("BBONG!\n");
         return false;
+    }
     hash_delete(spt, elem);
+    free(spte);
     return true;
     //할당 해제하는 거 필요
 }
