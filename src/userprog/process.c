@@ -227,6 +227,8 @@ process_exit (void)
 
   //vm
   remove_relevant_frame_entries(cur);
+  mummap_all(cur);
+  hash_destroy(cur->spt,spte_destructor);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */

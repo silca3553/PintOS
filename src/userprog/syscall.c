@@ -185,9 +185,8 @@ int sys_read(struct thread* cur, int fd, void *buffer, int size){
   {
     if (found == NULL)
       sys_exit(cur, -1);
-    //frame_load_pin(cur, buffer, size);
+
     off_t result =  file_read(cur->fdt[fd], buffer, size);
-    //frame_unpin(cur, buffer, size);
     return result;
   }
   return 0;
@@ -216,9 +215,7 @@ int sys_write(struct thread* cur, int fd, const void *buffer, unsigned size){
     }
     else
     {
-      //frame_load_pin(cur, buffer, size);
       off_t result = file_write(found, buffer, size); //if deny_file_write, return 0
-      //frame_unpin(cur, buffer, size);
       return result;
     }
   }
@@ -319,25 +316,9 @@ void sys_munmap(struct thread* cur, int mapid)
   }
 }
 
-
-/*vm pin*/
-void frame_load_pin(struct thread* cur, const void* buffer, unsigned size)
+void mummap_all(struct thread* cur)
 {
-  for(void *uaddr=pg_round_down(buffer); uaddr < buffer + size; uaddr += PGSIZE)
-  {
-    struct spte temp;
-    temp.uaddr = uaddr;
-    struct hash_elem* elem = hash_find(cur->spt, &temp.spt_elem);
-    struct spte* spte = hash_entry(elem, struct spte, spt_elem);
-    spt_load(spte);
-    frame_pin(uaddr, true);
-  }
-}
-
-void frame_unpin(struct thread* cur, const void* buffer, unsigned size)
-{
-  for(void *uaddr=pg_round_down(buffer); uaddr < buffer + size; uaddr += PGSIZE)
-  {
-    frame_pin(uaddr, false);
-  }
+  int size = list_size(&cur->mmap_table);
+  for(int mapid=0; mapid<size; mapid++)
+     sys_munmap(cur,mapid);
 }
