@@ -316,7 +316,7 @@ void sys_munmap(struct thread* cur, int mapid)
   }
 }
 
-void mummap_all(struct thread* cur)
+void munmap_all(struct thread* cur)
 {
   int size = list_size(&cur->mmap_table);
   for(int mapid=0; mapid<size; mapid++)

@@ -20,7 +20,6 @@ void spte_destructor(struct hash_elem *elem, void *aux UNUSED)
 {
     struct spte *entry = hash_entry(elem, struct spte, spt_elem);
     hash_delete(thread_current()->spt, elem);
-    list_remove(elem);
     if(entry->type == PAGE_SWAP)
         swap_free(entry->swap_idx);
     free(entry);
